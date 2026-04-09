@@ -1,21 +1,21 @@
 """
 ColorPanel – Tab 1.
 
-Changes from v2:
-  • When colour count changes after image extraction, palette is recalculated
-    from the stored source image (not padded with random colours).
-  • When colour count changes from a preset, new slots are filled with
-    perceptually similar variants (via palette.resize_to).
-  • Added Warm Urban and Woodland presets.
-  • Presets load at 8 colours by default; spin box updates accordingly.
+Now hosts two palettes via an inner QTabWidget:
+  • Layer 1  – used by the primary generator
+  • Layer 2  – used by the second generator layer (optional)
+
+Signals:
+  palette_changed(palette, layer)  – layer 0 or 1
 """
 from __future__ import annotations
+import random
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QSpinBox, QPushButton, QColorDialog,
     QFileDialog, QFrame, QSizePolicy, QScrollArea,
-    QToolButton, QGroupBox, QMessageBox,
+    QToolButton, QGroupBox, QMessageBox, QTabWidget,
 )
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -24,100 +24,96 @@ from core.palette import ColorPalette
 from config.defaults import APP
 
 
+# ── swatch widget ─────────────────────────────────────────────────────────────
+
 class SwatchWidget(QFrame):
     color_clicked = pyqtSignal(int)
     lock_toggled  = pyqtSignal(int, bool)
 
-    def __init__(self, index: int, hex_color: str, locked: bool = False, parent=None):
+    def __init__(self, index, hex_color, locked=False, parent=None):
         super().__init__(parent)
-        self.index  = index
-        self._hex   = hex_color
-        self._locked= locked
+        self.index   = index
+        self._hex    = hex_color
+        self._locked = locked
         self.setFixedSize(66, 74)
         self.setFrameShape(QFrame.Shape.Box)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(2)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(2,2,2,2); lay.setSpacing(2)
 
-        self._color_btn = QPushButton()
-        self._color_btn.setFixedHeight(44)
-        self._color_btn.setToolTip("Click to change colour")
-        self._color_btn.clicked.connect(lambda: self.color_clicked.emit(self.index))
-        layout.addWidget(self._color_btn)
+        self._btn = QPushButton()
+        self._btn.setFixedHeight(44)
+        self._btn.setToolTip("Click to change colour")
+        self._btn.clicked.connect(lambda: self.color_clicked.emit(self.index))
+        lay.addWidget(self._btn)
 
-        self._lock_btn = QToolButton()
-        self._lock_btn.setCheckable(True)
-        self._lock_btn.setChecked(locked)
-        self._lock_btn.setFixedSize(62, 20)
-        self._lock_btn.toggled.connect(self._on_lock)
-        layout.addWidget(self._lock_btn)
+        self._lock = QToolButton()
+        self._lock.setCheckable(True)
+        self._lock.setChecked(locked)
+        self._lock.setFixedSize(62, 20)
+        self._lock.toggled.connect(self._on_lock)
+        lay.addWidget(self._lock)
+        self._apply()
 
-        self._apply_style()
+    def _apply(self):
+        self._btn.setStyleSheet(
+            f"background-color:{self._hex};border:2px solid #555;border-radius:3px;")
+        self._lock.setText("🔒 Lock" if self._locked else "🔓 Free")
+        self._lock.setChecked(self._locked)
 
-    def _apply_style(self):
-        self._color_btn.setStyleSheet(
-            f"background-color:{self._hex}; border:2px solid #555; border-radius:3px;"
-        )
-        self._lock_btn.setText("🔒 Lock" if self._locked else "🔓 Free")
-        self._lock_btn.setChecked(self._locked)
+    def set_color(self, h):  self._hex = h;  self._apply()
+    def set_locked(self, v): self._locked = v; self._apply()
 
-    def set_color(self, h: str):
-        self._hex = h
-        self._apply_style()
-
-    def set_locked(self, v: bool):
-        self._locked = v
-        self._apply_style()
-
-    def _on_lock(self, checked: bool):
-        self._locked = checked
-        self._apply_style()
-        self.lock_toggled.emit(self.index, checked)
+    def _on_lock(self, c):
+        self._locked = c; self._apply()
+        self.lock_toggled.emit(self.index, c)
 
 
-class ColorPanel(QWidget):
-    palette_changed = pyqtSignal(object)   # emits ColorPalette
+# ── single-palette editor ─────────────────────────────────────────────────────
 
-    def __init__(self, parent=None):
+class _PaletteEditor(QWidget):
+    """Self-contained editor for one ColorPalette."""
+
+    changed = pyqtSignal(object)   # emits ColorPalette
+
+    def __init__(self, palette: ColorPalette, label: str = "Palette", parent=None):
         super().__init__(parent)
-        self._palette  = ColorPalette.military_preset()
+        self._palette  = palette
         self._swatches: list[SwatchWidget] = []
-        self._build_ui()
+        self._label    = label
+        self._build()
         self._rebuild_swatches()
 
-    # ── UI ────────────────────────────────────────────────────────────────────
-
-    def _build_ui(self):
+    def _build(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        root.setContentsMargins(6,6,6,6)
+        root.setSpacing(6)
 
-        count_row = QHBoxLayout()
-        count_row.addWidget(QLabel("Number of colours:"))
+        # Count row
+        cr = QHBoxLayout()
+        cr.addWidget(QLabel("Colours:"))
         self._spin = QSpinBox()
         self._spin.setRange(2, APP["max_palette_colors"])
         self._spin.setValue(len(self._palette))
-        self._spin.valueChanged.connect(self._on_count_changed)
-        count_row.addWidget(self._spin)
-        count_row.addStretch()
-        root.addLayout(count_row)
+        self._spin.valueChanged.connect(self._on_count)
+        cr.addWidget(self._spin); cr.addStretch()
+        root.addLayout(cr)
 
-        # Swatch scroll area
+        # Swatch scroll
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFixedHeight(210)
+        scroll.setFixedHeight(200)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._swatch_container = QWidget()
-        self._swatch_grid = QGridLayout(self._swatch_container)
-        self._swatch_grid.setSpacing(5)
-        scroll.setWidget(self._swatch_container)
+        self._sw_container = QWidget()
+        self._sw_grid = QGridLayout(self._sw_container)
+        self._sw_grid.setSpacing(4)
+        scroll.setWidget(self._sw_container)
         root.addWidget(scroll)
 
         # Presets
-        preset_group = QGroupBox("Presets")
-        pg = QGridLayout(preset_group)
+        pg = QGroupBox("Presets")
+        pl = QGridLayout(pg)
         presets = [
             ("🌿 Military",   "military_preset"),
             ("🏜 Desert",     "desert_preset"),
@@ -125,119 +121,96 @@ class ColorPanel(QWidget):
             ("🧱 Warm Urban", "warm_urban_preset"),
             ("🌲 Woodland",   "woodland_preset"),
             ("❄ Arctic",     "arctic_preset"),
+            ("❄🌑 Cool Hi",  "cool_contrast_preset"),
+            ("☀🌑 Warm Hi",  "warm_contrast_preset"),
             ("🎲 Random",     None),
         ]
-        for i, (label, method) in enumerate(presets):
-            btn = QPushButton(label)
-            btn.setFixedHeight(28)
-            btn.clicked.connect(lambda _, m=method: self._load_preset(m))
-            pg.addWidget(btn, i // 2, i % 2)
-        root.addWidget(preset_group)
+        for i, (lbl, m) in enumerate(presets):
+            b = QPushButton(lbl); b.setFixedHeight(26)
+            b.clicked.connect(lambda _, mm=m: self._load_preset(mm))
+            pl.addWidget(b, i//2, i%2)
+        root.addWidget(pg)
 
-        # Extract from image
-        extract_group = QGroupBox("Extract from image")
-        el = QHBoxLayout(extract_group)
-        self._extract_btn = QPushButton("📂 Choose image…")
-        self._extract_btn.clicked.connect(self._extract_from_image)
-        el.addWidget(self._extract_btn)
-        self._source_label = QLabel("No image selected")
-        self._source_label.setStyleSheet("color:#888; font-size:10px;")
-        self._source_label.setWordWrap(True)
-        el.addWidget(self._source_label, 1)
-        root.addWidget(extract_group)
-
+        # Image extract
+        eg = QGroupBox("Extract from image")
+        el = QHBoxLayout(eg)
+        eb = QPushButton("📂 Choose image…")
+        eb.clicked.connect(self._extract)
+        el.addWidget(eb)
+        self._src_lbl = QLabel("No image")
+        self._src_lbl.setStyleSheet("color:#888;font-size:10px;")
+        self._src_lbl.setWordWrap(True)
+        el.addWidget(self._src_lbl, 1)
+        root.addWidget(eg)
         root.addStretch()
 
-    # ── swatch management ─────────────────────────────────────────────────────
-
     def _rebuild_swatches(self):
-        for sw in self._swatches:
-            sw.deleteLater()
+        for sw in self._swatches: sw.deleteLater()
         self._swatches.clear()
-
         cols = 5
-        for i, hex_color in enumerate(self._palette):
-            sw = SwatchWidget(i, hex_color, self._palette.is_locked(i))
-            sw.color_clicked.connect(self._on_swatch_click)
-            sw.lock_toggled.connect(self._on_lock_toggle)
-            self._swatch_grid.addWidget(sw, i // cols, i % cols)
+        for i, h in enumerate(self._palette):
+            sw = SwatchWidget(i, h, self._palette.is_locked(i))
+            sw.color_clicked.connect(self._on_click)
+            sw.lock_toggled.connect(self._on_lock)
+            self._sw_grid.addWidget(sw, i//cols, i%cols)
             self._swatches.append(sw)
 
-    def _on_swatch_click(self, index: int):
-        current = QColor(self._palette[index])
-        chosen  = QColorDialog.getColor(current, self, "Choose colour")
+    def _on_click(self, idx):
+        chosen = QColorDialog.getColor(QColor(self._palette[idx]), self, "Choose colour")
         if chosen.isValid():
             h = chosen.name().upper()
-            self._palette.set_color(index, h)
-            self._swatches[index].set_color(h)
-            self.palette_changed.emit(self._palette)
+            self._palette.set_color(idx, h)
+            self._swatches[idx].set_color(h)
+            self.changed.emit(self._palette)
 
-    def _on_lock_toggle(self, index: int, locked: bool):
-        self._palette.set_locked(index, locked)
+    def _on_lock(self, idx, locked):
+        self._palette.set_locked(idx, locked)
 
-    # ── count change ──────────────────────────────────────────────────────────
-
-    def _on_count_changed(self, n: int):
+    def _on_count(self, n):
         if self._palette.source_image:
-            # Recalculate from the original image with new count
             try:
-                new_pal = ColorPalette.from_image_kmeans(
-                    self._palette.source_image, n_colors=n
-                )
-                # Re-apply any locked colours (overwrite corresponding slots)
-                for i in range(min(len(self._palette), len(new_pal))):
+                new = ColorPalette.from_image_kmeans(self._palette.source_image, n)
+                for i in range(min(len(self._palette), len(new))):
                     if self._palette.is_locked(i):
-                        new_pal.set_color(i, self._palette[i])
-                        new_pal.set_locked(i, True)
-                self._palette = new_pal
+                        new.set_color(i, self._palette[i]); new.set_locked(i, True)
+                self._palette = new
             except Exception:
                 self._palette.resize_to(n)
         else:
             self._palette.resize_to(n)
-
         self._spin.blockSignals(True)
         self._spin.setValue(len(self._palette))
         self._spin.blockSignals(False)
         self._rebuild_swatches()
-        self.palette_changed.emit(self._palette)
+        self.changed.emit(self._palette)
 
-    # ── presets ───────────────────────────────────────────────────────────────
-
-    def _load_preset(self, method: str | None):
+    def _load_preset(self, method):
         if method is None:
             self._palette = ColorPalette.random(self._spin.value())
         else:
             self._palette = getattr(ColorPalette, method)()
         self._palette.source_image = None
-        self._source_label.setText("No image selected")
+        self._src_lbl.setText("No image")
         self._spin.blockSignals(True)
         self._spin.setValue(len(self._palette))
         self._spin.blockSignals(False)
         self._rebuild_swatches()
-        self.palette_changed.emit(self._palette)
+        self.changed.emit(self._palette)
 
-    # ── image extraction ──────────────────────────────────────────────────────
-
-    def _extract_from_image(self):
+    def _extract(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open image", "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.tiff *.webp)"
-        )
-        if not path:
-            return
+            "Images (*.png *.jpg *.jpeg *.bmp *.tiff *.webp)")
+        if not path: return
         try:
-            n = self._spin.value()
-            self._palette = ColorPalette.from_image_kmeans(path, n_colors=n)
-            self._source_label.setText(path.split("/")[-1])
+            self._palette = ColorPalette.from_image_kmeans(path, self._spin.value())
+            self._src_lbl.setText(path.split("/")[-1])
             self._rebuild_swatches()
-            self.palette_changed.emit(self._palette)
+            self.changed.emit(self._palette)
         except Exception as e:
             QMessageBox.warning(self, "Extraction failed", str(e))
 
-    # ── public API ────────────────────────────────────────────────────────────
-
-    def get_palette(self) -> ColorPalette:
-        return self._palette
+    def get_palette(self) -> ColorPalette: return self._palette
 
     def set_palette(self, palette: ColorPalette):
         self._palette = palette
@@ -245,3 +218,33 @@ class ColorPanel(QWidget):
         self._spin.setValue(len(palette))
         self._spin.blockSignals(False)
         self._rebuild_swatches()
+
+
+# ── outer panel with two tabs ─────────────────────────────────────────────────
+
+class ColorPanel(QWidget):
+    # layer: 0 = layer1 palette, 1 = layer2 palette
+    palette_changed = pyqtSignal(object, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._ed1 = _PaletteEditor(ColorPalette.military_preset(), "Layer 1")
+        self._ed2 = _PaletteEditor(ColorPalette.urban_preset(),    "Layer 2")
+
+        tabs = QTabWidget()
+        tabs.addTab(self._ed1, "Layer 1")
+        tabs.addTab(self._ed2, "Layer 2")
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0,0,0,0)
+        lay.addWidget(tabs)
+
+        self._ed1.changed.connect(lambda p: self.palette_changed.emit(p, 0))
+        self._ed2.changed.connect(lambda p: self.palette_changed.emit(p, 1))
+
+    def get_palette(self, layer=0) -> ColorPalette:
+        return self._ed1.get_palette() if layer == 0 else self._ed2.get_palette()
+
+    def set_palette(self, palette: ColorPalette, layer=0):
+        ed = self._ed1 if layer == 0 else self._ed2
+        ed.set_palette(palette)
