@@ -1,6 +1,8 @@
-# Camouflage Development Suite
+# Camouflage Development Tool
 
 A desktop application for designing, generating, and evolving seamless camouflage patterns. Built with Python and PyQt6.
+
+![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![License](https://img.shields.io/badge/license-MIT-green) ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
 ---
 
@@ -213,7 +215,7 @@ Add a function to `core/fitness.py` returning a float in [0, 1], then include it
 
 MIT License
 
-Copyright (c) 2026
+Copyright (c) 2025
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
