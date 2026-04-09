@@ -1,8 +1,6 @@
-"""
-Generator registry – maps display name → class.
-Import from here to get access to all generators.
-"""
+"""Generator registry."""
 from generators.procedural_noise   import ProceduralNoiseGenerator
+from generators.blur_sharp         import BlurSharpGenerator
 from generators.reaction_diffusion import ReactionDiffusionGenerator
 from generators.l_system           import LSystemGenerator
 from generators.recursive_fractal  import RecursiveFractalGenerator
@@ -11,6 +9,7 @@ from generators.collage            import CollageGenerator
 
 REGISTRY: dict[str, type] = {
     "Procedural Noise":   ProceduralNoiseGenerator,
+    "Blur-Sharp":         BlurSharpGenerator,
     "Reaction-Diffusion": ReactionDiffusionGenerator,
     "L-System":           LSystemGenerator,
     "Recursive Fractal":  RecursiveFractalGenerator,
@@ -19,7 +18,6 @@ REGISTRY: dict[str, type] = {
 }
 
 def get_generator(name: str):
-    """Return an instantiated generator by display name."""
     cls = REGISTRY.get(name)
     if cls is None:
         raise KeyError(f"Unknown generator: {name!r}. Available: {list(REGISTRY)}")

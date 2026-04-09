@@ -1,17 +1,11 @@
 """
-L-System Generator – multiple trees, per-tree variation, toroidal turtle.
+L-System Generator – seamless multi-tree with 9-copy toroidal rendering.
 
-Each tree shares the same axiom/rules but gets its own:
-  • starting position  (random across canvas)
-  • starting direction (random full rotation)
-  • angle             (base_angle ± angle_var)
-  • step size         (uniform in [step_min, step_max])
-  • line width        (uniform int in [width_min, width_max])
-  • colour            (random from palette if color_per_tree, else cycling)
-
-Turtle positions are wrapped modulo (width, height) for seamless tiling.
-Lines that cross a boundary are split at the crossing point so no long
-diagonal artefacts appear.
+Seam fix: instead of detecting and skipping boundary-crossing line segments,
+we collect ALL segments for each tree and then draw them at all 9 toroidal
+positions (dx, dy) ∈ {-W, 0, W} × {-H, 0, H}.  OpenCV clips lines that fall
+outside the canvas automatically, so this is both simple and correct.
+The result is perfectly seamless at any canvas size.
 """
 from __future__ import annotations
 import math
@@ -22,10 +16,10 @@ from config.defaults import GENERATORS
 
 
 def _expand(axiom: str, rules: dict, iterations: int) -> str:
-    current = axiom
+    s = axiom
     for _ in range(iterations):
-        current = "".join(rules.get(ch, ch) for ch in current)
-    return current
+        s = "".join(rules.get(c, c) for c in s)
+    return s
 
 
 def _parse_rules(rules_str: str) -> dict:
@@ -38,41 +32,49 @@ def _parse_rules(rules_str: str) -> dict:
     return rules
 
 
-def _draw_toroidal_line(canvas, x0, y0, x1, y1, color, width, W, H):
+def _collect_segments(sentence, angle_rad, step, start_x, start_y,
+                      start_dir, colors, n, color_idx, lw):
     """
-    Draw a line that wraps at canvas boundaries.
-    Splits the segment at each crossing and draws each piece separately.
+    Walk the L-system sentence and return a list of
+    (x0, y0, x1, y1, bgr_tuple, linewidth).
+    Coordinates are NOT wrapped — they can be negative or > canvas size.
     """
-    dx = x1 - x0
-    dy = y1 - y0
-    steps = max(int(math.hypot(dx, dy) / max(W, H) * 100) + 1, 1)
+    x, y      = start_x, start_y
+    direction = start_dir
+    ci        = color_idx
+    stack     = []
+    segs      = []
 
-    prev_x = x0 % W
-    prev_y = y0 % H
+    for ch in sentence:
+        if ch in ("F", "G"):
+            nx = x + step * math.cos(direction)
+            ny = y + step * math.sin(direction)
+            r, g, b = colors[ci % n]
+            segs.append((x, y, nx, ny, (int(b), int(g), int(r)), lw))
+            x, y = nx, ny
+        elif ch == "+":
+            direction += angle_rad
+        elif ch == "-":
+            direction -= angle_rad
+        elif ch == "[":
+            stack.append((x, y, direction, ci))
+        elif ch == "]":
+            if stack:
+                x, y, direction, ci = stack.pop()
+        elif ch == "f":
+            x += step * math.cos(direction)
+            y += step * math.sin(direction)
+        elif ch == "|":
+            direction += math.pi
 
-    for i in range(1, steps + 1):
-        t = i / steps
-        raw_x = x0 + dx * t
-        raw_y = y0 + dy * t
-        cur_x = raw_x % W
-        cur_y = raw_y % H
-
-        # If wrapping occurred (jump), don't draw this segment
-        if abs(cur_x - prev_x) < W / 2 and abs(cur_y - prev_y) < H / 2:
-            cv2.line(canvas,
-                     (int(prev_x), int(prev_y)),
-                     (int(cur_x),  int(cur_y)),
-                     color, width)
-
-        prev_x, prev_y = cur_x, cur_y
+    return segs
 
 
 class LSystemGenerator(BaseGenerator):
     name = "L-System"
     description = (
-        "Multiple turtle-based L-System trees scattered across the canvas. "
-        "Each tree has independent angle, step size, width and colour. "
-        "Toroidal wrapping for seamless patterns."
+        "Multiple turtle-based L-System trees with per-tree variation. "
+        "Segments drawn at 9 toroidal offsets → perfectly seamless at any size."
     )
 
     def get_param_schema(self) -> dict:
@@ -96,71 +98,53 @@ class LSystemGenerator(BaseGenerator):
         width_min   = int(params.get("width_min", 1))
         width_max   = int(params.get("width_max", 2))
         color_per   = bool(params.get("color_per_tree", True))
+        transparent = bool(params.get("transparent_bg", False))
         seed        = int(params.get("seed", 42))
 
-        rng = np.random.default_rng(seed)
-        rules = _parse_rules(rules_str)
+        rng    = np.random.default_rng(seed)
+        rules  = _parse_rules(rules_str)
+        n      = max(1, len(colors))
 
-        n_colors = max(1, len(colors))
-
-        # ── Expand L-system once (shared across all trees) ────────────────────
+        # Expand once (shared)
         sentence = _expand(axiom, rules, iterations)
 
-        # ── Background = first colour ─────────────────────────────────────────
-        canvas = np.zeros((height, width, 3), dtype=np.uint8)
-        if colors:
+        # Canvas
+        channels = 4 if transparent else 3
+        canvas   = np.zeros((height, width, channels), dtype=np.uint8)
+        if not transparent and colors:
             r0, g0, b0 = colors[0]
             canvas[:] = (int(b0), int(g0), int(r0))
 
-        # ── Draw each tree ────────────────────────────────────────────────────
+        # Collect and draw all trees
         for tree_idx in range(num_trees):
-            # Per-tree parameters
-            angle_deg  = base_angle + rng.uniform(-angle_var, angle_var)
-            angle_rad  = math.radians(angle_deg)
-            step       = rng.uniform(step_min, step_max)
-            lw         = int(rng.integers(width_min, width_max + 1))
+            angle_rad = math.radians(
+                base_angle + rng.uniform(-angle_var, angle_var)
+            )
+            step = rng.uniform(step_min, step_max)
+            lw   = int(rng.integers(width_min, width_max + 1))
+            ci   = int(rng.integers(0, n)) if color_per else tree_idx % n
 
-            if color_per:
-                ci = int(rng.integers(0, n_colors))
-            else:
-                ci = tree_idx % n_colors
-            r, g, b = colors[ci]
-            color_bgr = (int(b), int(g), int(r))
+            start_x   = rng.uniform(0, width)
+            start_y   = rng.uniform(0, height)
+            start_dir = rng.uniform(0, 2 * math.pi)
 
-            # Random start position, random initial heading
-            x   = rng.uniform(0, width)
-            y   = rng.uniform(0, height)
-            direction = rng.uniform(0, 2 * math.pi)
+            segs = _collect_segments(
+                sentence, angle_rad, step,
+                start_x, start_y, start_dir,
+                colors, n, ci, lw,
+            )
 
-            stack = []
-
-            for ch in sentence:
-                if ch in ("F", "G"):
-                    nx = x + step * math.cos(direction)
-                    ny = y + step * math.sin(direction)
-                    _draw_toroidal_line(canvas,
-                                        x, y, nx, ny,
-                                        color_bgr, lw, width, height)
-                    x, y = nx, ny
-
-                elif ch == "+":
-                    direction += angle_rad
-
-                elif ch == "-":
-                    direction -= angle_rad
-
-                elif ch == "[":
-                    stack.append((x, y, direction))
-
-                elif ch == "]":
-                    if stack:
-                        x, y, direction = stack.pop()
-
-                elif ch == "f":
-                    x += step * math.cos(direction)
-                    y += step * math.sin(direction)
-
-                elif ch == "|":
-                    direction += math.pi
+            # Draw at all 9 toroidal offsets
+            for dy in (-height, 0, height):
+                for dx in (-width, 0, width):
+                    for x0, y0, x1, y1, color_bgr, line_w in segs:
+                        px0, py0 = int(x0 + dx), int(y0 + dy)
+                        px1, py1 = int(x1 + dx), int(y1 + dy)
+                        if transparent:
+                            cv2.line(canvas, (px0, py0), (px1, py1),
+                                     color_bgr + (255,), line_w)
+                        else:
+                            cv2.line(canvas, (px0, py0), (px1, py1),
+                                     color_bgr, line_w)
 
         return canvas

@@ -16,31 +16,22 @@ class Population:
         size: int = EVOLUTION["population_size"],
         generator_type: str = "Procedural Noise",
         colors: list[str] | None = None,
-        base_params: dict | None = None,
     ):
         self.size = size
         self.generator_type = generator_type
         self.colors = colors or []
-        self.base_params = base_params or {}   # params to seed from (e.g. shape_folder)
         self.individuals: list[CamoPattern] = []
         self.generation = 0
 
     # ── initialisation ────────────────────────────────────────────────────────
 
     def seed(self):
-        """Create an initial random population, starting from base_params."""
+        """Create an initial random population."""
         gen = get_generator(self.generator_type)
-        schema = gen.get_param_schema()
         self.individuals = []
         for _ in range(self.size):
             params = gen.default_params()
-            # Overlay base_params (e.g. shape_folder from Generator tab)
-            params.update(self.base_params)
-            params = gen.mutate(params, strength=0.5)
-            # Restore non-evolvable base params that mutation may have changed
-            for k, v in self.base_params.items():
-                if not schema.get(k, {}).get("evolvable", True):
-                    params[k] = v
+            params = gen.mutate(params, strength=0.5)   # randomise from defaults
             p = CamoPattern(
                 generator_type=self.generator_type,
                 params=params,
