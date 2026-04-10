@@ -63,70 +63,72 @@ class BlurSharpGenerator(BaseGenerator):
         colors: list[tuple[int, int, int]],
         params: dict,
     ) -> np.ndarray:
-        import noise as noise_lib
 
         sigma_x     = float(params.get("sigma_x",       4.0))
         sigma_y     = float(params.get("sigma_y",       4.0))
         iterations  = int(params.get("iterations",      12))
         sharpen_amt = float(params.get("sharpen_amt",   4.0))
         sharpen_sig = float(params.get("sharpen_sigma", 2.0))
-        noise_freq  = int(params.get("noise_freq",      4))
-        noise_amp   = float(params.get("noise_amp",     0.5))
+    
+        # NEW
+        noise_density = float(params.get("noise_density", 0.15))  # probability pixel is active
+        noise_amp     = float(params.get("noise_amp",     1.0))   # amplitude of active pixels
+        noise_mode    = params.get("noise_mode", "uniform")       # "uniform" | "binary"
+    
         work_size   = int(params.get("work_size",       256))
         post_blur   = float(params.get("post_blur",     1.0))
         color_mode  = params.get("color_mode",          "threshold")
         transparent = bool(params.get("transparent_bg", False))
         seed        = int(params.get("seed",            42))
-
-        rng    = np.random.default_rng(seed)
-        base_x = int(rng.integers(0, 500)) * noise_freq
-        base_y = int(rng.integers(0, 500)) * noise_freq
-
-        # ── 1. Seamless initial noise ─────────────────────────────────────────
+    
+        rng = np.random.default_rng(seed)
+    
+        # ── 1. Sparse stochastic initial field ───────────────────────────────
         field = np.zeros((work_size, work_size), dtype=np.float32)
-        for y in range(work_size):
-            ny = (y / work_size) * noise_freq + base_y
-            for x in range(work_size):
-                nx = (x / work_size) * noise_freq + base_x
-                field[y, x] = noise_lib.pnoise2(
-                    nx, ny,
-                    octaves=1,
-                    repeatx=noise_freq,
-                    repeaty=noise_freq,
-                )
-        # Normalise to [0, noise_amp]
-        mn, mx = field.min(), field.max()
-        if mx > mn:
-            field = (field - mn) / (mx - mn) * noise_amp
-
-        # ── 2. Iterative blur-sharpen ─────────────────────────────────────────
+    
+        mask = rng.random((work_size, work_size)) < noise_density
+    
+        if noise_mode == "binary":
+            field[mask] = noise_amp
+        else:  # "uniform"
+            field[mask] = rng.random(np.count_nonzero(mask)) * noise_amp
+    
+        # Optional: center distribution around 0.5 to avoid dark bias
+        if noise_density > 0:
+            mean_val = field.mean()
+            field -= mean_val
+            field += 0.5
+    
+        field = np.clip(field, 0.0, 1.0)
+    
+        # ── 2. Iterative blur-sharpen ────────────────────────────────────────
         for _ in range(iterations):
             field = _toroidal_blur_2d(field, sigma_x, sigma_y)
             field = _unsharp(field, sharpen_sig, sharpen_amt)
+    
             mn, mx = field.min(), field.max()
             if mx > mn:
                 field = (field - mn) / (mx - mn)
             else:
                 field[:] = 0.5
-
-        # ── 3. Upscale ────────────────────────────────────────────────────────
+    
+        # ── 3. Upscale ───────────────────────────────────────────────────────
         if work_size != width or work_size != height:
             u8    = (field * 255).clip(0, 255).astype(np.uint8)
             big   = cv2.resize(u8, (width, height), interpolation=cv2.INTER_LINEAR)
             field = big.astype(np.float32) / 255.0
-
+    
         if post_blur > 0.1:
             field = _toroidal_blur_2d(field, post_blur, post_blur)
             mn, mx = field.min(), field.max()
             if mx > mn:
                 field = (field - mn) / (mx - mn)
-
-        # ── 4. Colourise ──────────────────────────────────────────────────────
+    
+        # ── 4. Colourise ─────────────────────────────────────────────────────
         return _colorise(field, colors, color_mode, transparent)
-
-
+    
 # ── shared colour-mapping helper ──────────────────────────────────────────────
-
+    
 def _colorise(field, colors, color_mode, transparent):
     h, w = field.shape
     n    = max(1, len(colors))
