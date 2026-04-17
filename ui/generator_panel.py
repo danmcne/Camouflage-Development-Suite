@@ -282,3 +282,19 @@ class GeneratorPanel(QWidget):
             self._populate_params(self._gen_combo, self._params_form,
                                   self._param_widgets, self._desc_label)
         self._write_params(self._param_widgets, params)
+
+    def load_pattern_layer2(self, gen_name: str, params: dict):
+        """
+        Called by Inspect mode when a 2-layer candidate is chosen:
+        enable the second-layer group and populate its combo+params.
+        """
+        # Enable the second layer if not already
+        if not self._layer2_check.isChecked():
+            self._layer2_check.setChecked(True)
+        if gen_name in REGISTRY:
+            self._gen2_combo.blockSignals(True)
+            self._gen2_combo.setCurrentText(gen_name)
+            self._gen2_combo.blockSignals(False)
+            self._populate_params(self._gen2_combo, self._params_form2,
+                                  self._param_widgets2, None)
+        self._write_params(self._param_widgets2, params)

@@ -4,6 +4,13 @@ Collage Generator – stamp PNG/JPG shapes with palette tinting, toroidal wrappi
 bg_color_idx: the palette colour at this index fills the canvas background.
 Shapes are never tinted to that colour, preventing the same-colour outline
 composite artefact caused by alpha edges adjacent to identical fills.
+
+Field-driven placement (use_fields=True):
+  Three low-frequency Perlin noise fields drive:
+    • density_field   → where shapes cluster (importance-sampled positions)
+    • orient_field    → local preferred rotation angle
+    • scale_field     → local size modulation
+  This creates environment-aware structure instead of uniform random scatter.
 """
 from __future__ import annotations
 import math
@@ -61,11 +68,96 @@ def _blend(base_f, layer_f, alpha_f, mode):
     return base_f*(1-alpha_f) + blended*alpha_f
 
 
+def _build_fields(width: int, height: int, field_scale: float, seed: int,
+                  rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Build three low-frequency noise fields at reduced resolution then upscale.
+    Returns (density, orient_angle, scale) all float32 in [0,1].
+    """
+    try:
+        import noise as noise_lib
+    except ImportError:
+        # Fallback: use scipy/cv2 blurred random noise if `noise` not available
+        noise_lib = None
+
+    fw = max(16, int(width  * field_scale))
+    fh = max(16, int(height * field_scale))
+
+    if noise_lib is not None:
+        base_x = rng.uniform(0, 100)
+        base_y = rng.uniform(0, 100)
+        periods = 3
+
+        density_raw   = np.zeros((fh, fw), dtype=np.float32)
+        orient_raw    = np.zeros((fh, fw), dtype=np.float32)
+        scale_raw     = np.zeros((fh, fw), dtype=np.float32)
+
+        for fy in range(fh):
+            ny = (fy / fh) * periods
+            for fx in range(fw):
+                nx = (fx / fw) * periods
+                density_raw[fy, fx] = noise_lib.pnoise2(
+                    nx + base_x, ny + base_y,
+                    octaves=4, persistence=0.5, lacunarity=2.0,
+                    repeatx=periods, repeaty=periods)
+                orient_raw[fy, fx] = noise_lib.pnoise2(
+                    nx + base_x + 50, ny + base_y + 37,
+                    octaves=3, persistence=0.5, lacunarity=2.0,
+                    repeatx=periods, repeaty=periods)
+                scale_raw[fy, fx] = noise_lib.pnoise2(
+                    nx + base_x + 73, ny + base_y + 19,
+                    octaves=3, persistence=0.5, lacunarity=2.0,
+                    repeatx=periods, repeaty=periods)
+    else:
+        # Fallback: blurred random
+        density_raw = rng.random((fh, fw)).astype(np.float32)
+        orient_raw  = rng.random((fh, fw)).astype(np.float32)
+        scale_raw   = rng.random((fh, fw)).astype(np.float32)
+        for arr in (density_raw, orient_raw, scale_raw):
+            ksize = max(3, (min(fh, fw) // 2) | 1)
+            cv2.GaussianBlur(arr, (ksize, ksize), ksize / 6, dst=arr)
+
+    def _normalise(arr):
+        lo, hi = arr.min(), arr.max()
+        if hi > lo:
+            return (arr - lo) / (hi - lo)
+        return np.full_like(arr, 0.5)
+
+    density_f = cv2.resize(_normalise(density_raw), (width, height),
+                            interpolation=cv2.INTER_LINEAR)
+    orient_f  = cv2.resize(_normalise(orient_raw),  (width, height),
+                            interpolation=cv2.INTER_LINEAR)
+    scale_f   = cv2.resize(_normalise(scale_raw),   (width, height),
+                            interpolation=cv2.INTER_LINEAR)
+    return density_f, orient_f, scale_f
+
+
+def _importance_sample(density_f: np.ndarray, density_contrast: float,
+                        count: int, rng: np.random.Generator) -> list[tuple[int, int]]:
+    """
+    Sample (x, y) positions biased by density field using inverse-CDF sampling.
+    density_contrast=0 → uniform; 1 → strongly clustered.
+    """
+    h, w = density_f.shape
+    # Raise density to a power to increase contrast
+    power = 1.0 + density_contrast * 8.0
+    weights = density_f.ravel() ** power
+    total = weights.sum()
+    if total <= 0:
+        weights = np.ones_like(weights)
+        total = weights.sum()
+    probs = weights / total
+    flat_indices = rng.choice(len(probs), size=count, replace=True, p=probs)
+    ys, xs = np.unravel_index(flat_indices, (h, w))
+    return list(zip(xs.tolist(), ys.tolist()))
+
+
 class CollageGenerator(BaseGenerator):
     name = "Collage"
     description = (
         "Stamp PNG/JPG shapes with palette tinting and toroidal wrapping. "
-        "Set 'Background colour index' to avoid same-colour outline artefacts."
+        "Enable 'Field-driven placement' to cluster shapes with local alignment — "
+        "producing environment-aware structure instead of uniform scatter."
     )
 
     def get_param_schema(self) -> dict:
@@ -83,15 +175,25 @@ class CollageGenerator(BaseGenerator):
         transparent   = bool(params.get("transparent_bg",False))
         seed          = int(params.get("seed",           42))
 
+        # Field-driven params
+        use_fields       = bool(params.get("use_fields",       False))
+        field_scale      = float(params.get("field_scale",     0.25))
+        density_contrast = float(params.get("density_contrast",0.7))
+        orient_coherence = float(params.get("orient_coherence",0.6))
+        scale_variation  = float(params.get("scale_variation", 0.5))
+
         rng  = np.random.default_rng(seed)
         n    = max(1, len(colors))
         base = min(width, height)
         bg_idx = max(0, min(bg_idx, n - 1))
+        range_min = min(scale_min, scale_max)
+        scale_max = max(scale_min, scale_max)
+        scale_min = range_min
 
         # Build foreground colour list (exclude bg colour)
         fg_colors = [c for i, c in enumerate(colors) if i != bg_idx]
         if not fg_colors:
-            fg_colors = colors   # fallback if only one colour
+            fg_colors = colors
 
         # Canvas
         if transparent:
@@ -104,13 +206,37 @@ class CollageGenerator(BaseGenerator):
         png_shapes = _load_shapes(shape_folder)
         use_png    = len(png_shapes) > 0
 
-        for _ in range(count):
+        # Build spatial fields if requested
+        if use_fields:
+            density_f, orient_f, scale_f = _build_fields(
+                width, height, field_scale, seed, rng)
+            positions = _importance_sample(density_f, density_contrast, count, rng)
+        else:
+            density_f = orient_f = scale_f = None
+            positions = None
+
+        for i in range(count):
             ci   = int(rng.integers(0, len(fg_colors)))
             tint = fg_colors[ci]
-            sz   = max(8, int(rng.uniform(scale_min, scale_max) * base))
-            cx   = int(rng.integers(0, width))
-            cy   = int(rng.integers(0, height))
-            angle= rng.uniform(-rot_range, rot_range)
+
+            if use_fields and positions is not None:
+                cx, cy = positions[i]
+                # Scale modulated by scale field
+                local_scale = scale_f[cy, cx]
+                scale_range = scale_max - scale_min
+                sz_frac = scale_min + scale_range * (
+                    (1.0 - scale_variation) * 0.5 +
+                    scale_variation * local_scale)
+                sz = max(8, int(sz_frac * base))
+                # Orientation from field + random deviation
+                field_angle = orient_f[cy, cx] * 360.0 - 180.0   # map [0,1] → [-180,180]
+                rand_angle  = rng.uniform(-rot_range, rot_range)
+                angle = field_angle * orient_coherence + rand_angle * (1.0 - orient_coherence)
+            else:
+                sz    = max(8, int(rng.uniform(scale_min, scale_max) * base))
+                cx    = int(rng.integers(0, width))
+                cy    = int(rng.integers(0, height))
+                angle = rng.uniform(-rot_range, rot_range)
 
             raw  = (png_shapes[int(rng.integers(0, len(png_shapes)))]
                     if use_png else self._make_procedural(sz, rng))
@@ -169,7 +295,7 @@ class CollageGenerator(BaseGenerator):
             ry = max(2,int(rng.uniform(0.3,1.0)*r))
             cv2.ellipse(img,(cx,cy),(rx,ry),0,0,360,W,-1)
         elif s == 1:
-            n_p   = int(rng.integers(5,9))
+            n_p   = 3
             angs  = np.sort(rng.uniform(0,2*math.pi,n_p))
             radii = rng.uniform(r*0.4,r*0.95,n_p)
             pts   = np.array([[int(cx+radii[i]*math.cos(angs[i])),

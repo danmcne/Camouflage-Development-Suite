@@ -6,6 +6,8 @@ from generators.l_system           import LSystemGenerator
 from generators.recursive_fractal  import RecursiveFractalGenerator
 from generators.urban_geometric    import UrbanGeometricGenerator
 from generators.collage            import CollageGenerator
+from generators.dazzle             import DazzleGenerator
+from generators.plaid              import PlaidGenerator
 
 REGISTRY: dict[str, type] = {
     "Procedural Noise":   ProceduralNoiseGenerator,
@@ -15,6 +17,8 @@ REGISTRY: dict[str, type] = {
     "Recursive Fractal":  RecursiveFractalGenerator,
     "Urban Geometric":    UrbanGeometricGenerator,
     "Collage":            CollageGenerator,
+    "Dazzle":             DazzleGenerator,
+    "Plaid":              PlaidGenerator,
 }
 
 def get_generator(name: str):

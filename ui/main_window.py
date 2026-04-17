@@ -167,7 +167,10 @@ class MainWindow(QMainWindow):
                 self._gen_panel.get_generator_name(),
                 self._gen_panel.get_params()))
 
-        # Evolution: candidate chosen → preview + (if inspect) → generator panel
+        # Inject L2 provider so evolution panel can read generator panel's L2 config
+        self._evo_panel._layer2_provider = self._gen_panel.get_second_layer_config
+
+        # Evolution: candidate chosen → preview + generator panel
         self._evo_panel.candidate_chosen.connect(self._on_candidate_chosen)
         self._evo_panel.wants_fullwidth.connect(self._on_evo_fullwidth)
         self._tabs.currentChanged.connect(self._on_tab_changed)
@@ -268,23 +271,26 @@ class MainWindow(QMainWindow):
 
     # ── candidate chosen (from evolution) ────────────────────────────────────
 
-    def _on_candidate_chosen(self, img: np.ndarray, scores: dict, gen_name: str, params: dict):
+    def _on_candidate_chosen(self, img: np.ndarray, scores: dict,
+                             gen_name: str, params: dict,
+                             gen_name2: str, params2: dict):
         self._current_pattern = img
         self._preview.set_pattern(img)
         bg = self._bg_manager.get_active()
         self._preview.set_background(bg)
         self._preview.set_fitness(scores)
 
-        # Always load into generator panel so user can see/tweak params
+        # Load L1 into generator panel
         self._gen_panel.load_pattern(gen_name, params)
-        # Switch to Generator tab so they can see it immediately
-        gen_idx = self._tabs.indexOf(self._gen_panel)
-        # Don't auto-switch tab: let user do it. Just update in background.
-        # (Auto-switching would close the evolution view unexpectedly.)
 
+        # Load L2 into generator panel's second layer if present
+        if gen_name2:
+            self._gen_panel.load_pattern_layer2(gen_name2, params2)
+
+        l2_tag = f" + {gen_name2}" if gen_name2 else ""
         self.statusBar().showMessage(
-            f"Candidate [{gen_name}] — total={scores.get('total',0):.3f}  "
-            f"(Generator tab updated with its params)")
+            f"Candidate [{gen_name}{l2_tag}] — total={scores.get('total',0):.3f}  "
+            f"(Generator tab updated)")
 
     # ── backgrounds ──────────────────────────────────────────────────────────
 
