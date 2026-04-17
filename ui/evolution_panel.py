@@ -206,8 +206,7 @@ class _EvoWorker(QObject):
                 try:
                     img2 = gen2.generate(self._size[0], self._size[1],
                                          colors_rgb, params2)
-                    if img2.ndim == 3 and img2.shape[2] == 4:
-                        img2 = cv2.cvtColor(img2, cv2.COLOR_BGRA2BGR)
+                    # Do NOT strip alpha here — _blend_bgr uses it for compositing
                     img = _blend_bgr(img, img2, ind.blend_mode2, ind.opacity2)
                 except Exception:
                     pass
@@ -235,14 +234,27 @@ class _EvoWorker(QObject):
 
 def _blend_bgr(base: np.ndarray, overlay: np.ndarray,
                mode: str, opacity: float) -> np.ndarray:
-    b = base.astype(np.float32)/255.0
-    o = overlay.astype(np.float32)/255.0
+    """
+    Composite overlay onto base.  When overlay is BGRA its alpha channel is
+    used as a per-pixel mask (transparent pixels let the base show through).
+    opacity is an additional global multiplier on top of that alpha.
+    """
+    b = base.astype(np.float32) / 255.0
+
+    if overlay.ndim == 3 and overlay.shape[2] == 4:
+        # Extract and use the alpha channel — this is the transparent-bg fix
+        per_pixel_alpha = overlay[:, :, 3:4].astype(np.float32) / 255.0
+        o = overlay[:, :, :3].astype(np.float32) / 255.0
+    else:
+        per_pixel_alpha = np.ones((*overlay.shape[:2], 1), dtype=np.float32)
+        o = overlay.astype(np.float32) / 255.0
     if   mode == "multiply":   blended = b * o
     elif mode == "screen":     blended = 1-(1-b)*(1-o)
     elif mode == "overlay":    blended = np.where(b<0.5, 2*b*o, 1-2*(1-b)*(1-o))
     elif mode == "soft_light": blended = (1-2*o)*b*b + 2*o*b
     else:                      blended = o
-    return (np.clip(b*(1-opacity)+blended*opacity, 0, 1)*255).astype(np.uint8)
+    eff = per_pixel_alpha * opacity
+    return (np.clip(b*(1-eff) + blended*eff, 0, 1)*255).astype(np.uint8)
 
 
 # ── Main panel ────────────────────────────────────────────────────────────────
@@ -318,8 +330,8 @@ class EvolutionPanel(QWidget):
         # Evolution mode
         mode_g = QGroupBox("Evolution mode")
         mode_l = QVBoxLayout(mode_g)
-        self._mode_interactive = QRadioButton("Interactive (kill to select)")
-        self._mode_automatic   = QRadioButton("Automatic (fitness)")
+        self._mode_interactive = QRadioButton("Interactive\n (kill to select)")
+        self._mode_automatic   = QRadioButton("Automatic\n (fitness)")
         self._mode_interactive.setChecked(True)
         mode_l.addWidget(self._mode_interactive); mode_l.addWidget(self._mode_automatic)
         ctrl.addWidget(mode_g)
@@ -333,7 +345,7 @@ class EvolutionPanel(QWidget):
         gen_l.addWidget(self._gen_combo)
 
         # Two-layer toggle
-        self._layer2_check = QCheckBox("Evolve 2-layer stack (uses Generator tab L2)")
+        self._layer2_check = QCheckBox("Evolve 2-layer stack\n (L2 Generator tab)")
         self._layer2_check.setToolTip(
             "When checked the evolution worker generates and blends both generator layers "
             "exactly as set in the Generator tab. Both layers are jointly mutated. "

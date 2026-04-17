@@ -84,7 +84,20 @@ class _GenerateWorker(QObject):
                 img2, self._second["blend"], self._second["opacity"])
 
         if img.ndim == 3 and img.shape[2] == 4:
-            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            # Ensure correct dtype for PNG export (uint8 expected)
+            if img.dtype != np.uint8:
+                img = np.clip(img, 0, 255).astype(np.uint8)
+
+            # Keep RGBA intact — do NOT composite
+            rgba = img
+
+            # Optional: ensure alpha channel is valid
+            # (in case it's float or improperly scaled)
+            if rgba[:, :, 3].max() <= 1.0:
+                rgba[:, :, 3] = (rgba[:, :, 3] * 255).astype(np.uint8)
+
+            img = rgba
+
         self.finished.emit(img)
 
 
