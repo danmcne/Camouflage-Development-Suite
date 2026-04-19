@@ -86,9 +86,9 @@ Each octave composites three palette colours: one for each axis and a third for 
 
 ### Colour Palette Editor
 
-- 2–10 colours with per-swatch colour picker
-- Lock individual colours so evolution cannot change them
-- Extract a palette from any image using k-means clustering
+- 2–10 colours with per-swatch colour picker, from 
+- Lock individual colours so evolution further palette modification doesn't alter them
+- Extract a palette from a collection of images using k-means clustering
 - Six built-in presets: Military, Desert, Urban, Warm Urban, Woodland, Arctic
 - Extending a preset fills new slots with perceptually similar variants
 
