@@ -17,7 +17,7 @@ import math
 import os
 import numpy as np
 import cv2
-from generators.base import BaseGenerator
+from generators.base import BaseGenerator, get_bg_params, apply_transparent_bg, make_fg_colors
 from config.defaults import GENERATORS
 
 SUPPORTED_EXTS = {".png", ".jpg", ".jpeg"}
@@ -171,8 +171,7 @@ class CollageGenerator(BaseGenerator):
         rot_range     = float(params.get("rotation_range", 180))
         blend_mode    = params.get("blend_mode",         "normal")
         tint_strength = float(params.get("tint_strength",0.8))
-        bg_idx        = int(params.get("bg_color_idx",   0))
-        transparent   = bool(params.get("transparent_bg",False))
+        transparent   = bool(params.get("transparent_bg", False))
         seed          = int(params.get("seed",           42))
 
         # Field-driven params
@@ -185,13 +184,15 @@ class CollageGenerator(BaseGenerator):
         rng  = np.random.default_rng(seed)
         n    = max(1, len(colors))
         base = min(width, height)
-        bg_idx = max(0, min(bg_idx, n - 1))
+        bg_idx, exclude = get_bg_params(params, n)
         range_min = min(scale_min, scale_max)
         scale_max = max(scale_min, scale_max)
         scale_min = range_min
 
-        # Build foreground colour list (exclude bg colour)
-        fg_colors = [c for i, c in enumerate(colors) if i != bg_idx]
+        # Build foreground colour list (exclude bg colour if requested)
+        fg_colors = make_fg_colors(colors, bg_idx, exclude or True)
+        # Note: collage always excludes bg from shapes (that's its core design);
+        # exclude_bg_from_elements additionally lets user pick which index is bg.
         if not fg_colors:
             fg_colors = colors
 

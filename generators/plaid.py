@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 import numpy as np
 import cv2
-from generators.base import BaseGenerator
+from generators.base import BaseGenerator, get_bg_params, apply_transparent_bg
 from config.defaults import GENERATORS
 
 
@@ -191,7 +191,8 @@ class PlaidGenerator(BaseGenerator):
         result_bgr = (np.clip(canvas, 0.0, 1.0) * 255).astype(np.uint8)
 
         if transparent:
-            from generators.base import apply_transparent_bg
-            return apply_transparent_bg(result_bgr, colors)
+            n = max(1, len(colors))
+            bg_idx, _ = get_bg_params(params, n)
+            return apply_transparent_bg(result_bgr, colors, bg_idx)
 
         return result_bgr

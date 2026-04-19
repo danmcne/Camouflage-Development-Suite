@@ -93,6 +93,36 @@ class ColorPalette:
         pal.source_image = image_path
         return pal
 
+
+    @classmethod
+    def from_images_kmeans(cls, image_paths: list, n_colors: int = 5,
+                            sample_per_image: int = 500):
+        """
+        Extract a palette by running k-means over pixels sampled from multiple images.
+        Locked colours in any existing palette are handled by the caller (patch after).
+        """
+        import cv2
+        from sklearn.cluster import KMeans
+        all_pixels = []
+        for path in image_paths:
+            img = cv2.imread(path)
+            if img is None:
+                continue
+            pixels = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).reshape(-1, 3)
+            if len(pixels) > sample_per_image:
+                idx = np.random.choice(len(pixels), sample_per_image, replace=False)
+                pixels = pixels[idx]
+            all_pixels.append(pixels)
+        if not all_pixels:
+            raise ValueError("No readable images found.")
+        combined = np.vstack(all_pixels)
+        km = KMeans(n_clusters=n_colors, n_init="auto", random_state=0)
+        km.fit(combined)
+        colors = [rgb_to_hex(int(r), int(g), int(b))
+                  for r, g, b in km.cluster_centers_.astype(np.uint8)]
+        pal = cls(colors)
+        return pal
+
     @classmethod
     def random(cls, n=5):
         return cls([rgb_to_hex(random.randint(30,210),

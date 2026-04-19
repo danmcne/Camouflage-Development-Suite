@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import numpy as np
 import cv2
-from generators.base import BaseGenerator
+from generators.base import BaseGenerator, get_bg_params
 from config.defaults import GENERATORS
 from generators.blur_sharp import _colorise   # shared helper
 
@@ -112,5 +112,7 @@ class ProceduralNoiseGenerator(BaseGenerator):
         else:
             field[:] = 0.5
     
-        return _colorise(field, colors, color_mode, transparent)
+        n = max(1, len(colors))
+        bg_idx, exclude = get_bg_params(params, n)
+        return _colorise(field, colors, color_mode, transparent, bg_idx, exclude)
     

@@ -9,23 +9,33 @@ import numpy as np
 import cv2
 
 
-# ── shared utility ────────────────────────────────────────────────────────────
+# ── shared utilities ──────────────────────────────────────────────────────────
+
+def get_bg_params(params: dict, n_colors: int) -> tuple[int, bool]:
+    """
+    Read (bg_color_idx, exclude_bg_from_elements) from params with bounds checking.
+    bg_color_idx: which palette index is the "background" colour.
+    exclude_bg_from_elements: whether elements/shapes avoid that colour.
+    """
+    bg_idx  = max(0, min(int(params.get("bg_color_idx", 0)), max(0, n_colors - 1)))
+    exclude = bool(params.get("exclude_bg_from_elements", False))
+    return bg_idx, exclude
+
 
 def apply_transparent_bg(img_bgr: np.ndarray,
-                          colors: list[tuple[int, int, int]]) -> np.ndarray:
+                          colors: list[tuple[int, int, int]],
+                          bg_idx: int = 0) -> np.ndarray:
     """
-    Convert a BGR image to BGRA, making pixels that match colors[0] transparent.
+    Convert a BGR image to BGRA, making pixels that match colors[bg_idx] transparent.
 
-    colors[0] is the palette's background colour (RGB tuple).
-    In the BGR image those pixels are stored as (B, G, R).
+    colors stores RGB tuples; in the BGR image those pixels are (B, G, R).
     Returns a BGRA uint8 array.
     """
-    
     if not colors:
         return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2BGRA)
-    r0, g0, b0 = colors[0]          # palette stores RGB
+    bg_idx = max(0, min(bg_idx, len(colors) - 1))
+    r0, g0, b0 = colors[bg_idx]
     bgra = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2BGRA)
-    # Image stores BGR → background pixel = (b0, g0, r0)
     mask = (
         (bgra[:, :, 0] == int(b0)) &
         (bgra[:, :, 1] == int(g0)) &
@@ -35,6 +45,19 @@ def apply_transparent_bg(img_bgr: np.ndarray,
     return bgra
 
 
+def make_fg_colors(colors: list, bg_idx: int,
+                   exclude: bool) -> list:
+    """
+    Return the foreground colour list.
+    If exclude=True, omits colors[bg_idx]; otherwise returns all colors.
+    Always returns at least one colour.
+    """
+    if exclude and len(colors) > 1:
+        fg = [c for i, c in enumerate(colors) if i != bg_idx]
+        return fg if fg else colors
+    return colors
+
+
 def toroidal_gaussian(field: np.ndarray,
                        sigma_x: float,
                        sigma_y: float) -> np.ndarray:
@@ -42,7 +65,6 @@ def toroidal_gaussian(field: np.ndarray,
     Gaussian blur with toroidal (wrap-around) boundary conditions.
     Works on a 2-D float32 array.
     """
-
     kw = max(3, int(sigma_x * 6 + 1) | 1)
     kh = max(3, int(sigma_y * 6 + 1) | 1)
     padded  = np.pad(field, ((kh, kh), (kw, kw)), mode="wrap")
@@ -62,7 +84,7 @@ class BaseGenerator(ABC):
         self,
         width: int,
         height: int,
-        colors: list[tuple[int, int, int]],   # (R, G, B) tuples
+        colors: list[tuple[int, int, int]],
         params: dict,
     ) -> np.ndarray:
         """

@@ -2,15 +2,19 @@
 Recursive Fractal Generator – multi-scale Voronoi pyramid, memory-safe.
 
 Depth is capped externally by passing `max_depth` in params (set by evolution
-worker). Each level has an 8-second time limit; if exceeded the generator
-returns what it has so far.
+worker). Each level has an 8-second time limit.
+
+Background colour handling: bg_color_idx chooses which palette entry is the
+background. If exclude_bg_from_elements=True, Voronoi cells never receive that
+colour (it's only used for the canvas fill). transparent_bg makes bg-coloured
+pixels transparent in the output.
 """
 from __future__ import annotations
 import time
 import threading
 import numpy as np
 import cv2
-from generators.base import BaseGenerator
+from generators.base import BaseGenerator, get_bg_params, apply_transparent_bg, make_fg_colors
 from config.defaults import GENERATORS
 
 MAX_SEEDS_PER_LEVEL = 800
@@ -25,29 +29,28 @@ def set_abort(flag: bool):
 
 
 def _voronoi_layer(height, width, seeds, colors, rng, deadline):
-    N       = len(seeds)
-    n_c     = max(1, len(colors))
-    cidx    = rng.integers(0, n_c, size=N)
+    N    = len(seeds)
+    n_c  = max(1, len(colors))
+    cidx = rng.integers(0, n_c, size=N)
 
-    flat_x  = np.tile(np.arange(width,  dtype=np.float32), height)
-    flat_y  = np.repeat(np.arange(height, dtype=np.float32), width)
-    min_d   = np.full(height * width, np.inf, dtype=np.float32)
-    nearest = np.zeros(height * width, dtype=np.int32)
+    flat_x = np.tile(np.arange(width,  dtype=np.float32), height)
+    flat_y = np.repeat(np.arange(height, dtype=np.float32), width)
+    min_d  = np.full(height * width, np.inf, dtype=np.float32)
+    nearest= np.zeros(height * width, dtype=np.int32)
 
     for start in range(0, N, BATCH):
         if _abort_event.is_set() or time.time() > deadline:
             return None
-        batch = seeds[start:start + BATCH]
-        dx = np.abs(flat_x[:, None] - batch[:, 0])
-        dy = np.abs(flat_y[:, None] - batch[:, 1])
-        dx = np.minimum(dx, width  - dx)
-        dy = np.minimum(dy, height - dy)
-        dist = dx * dx + dy * dy
-        local_min = dist.min(axis=1)
-        local_arg = dist.argmin(axis=1)
-        better    = local_min < min_d
-        min_d[better]    = local_min[better]
-        nearest[better]  = start + local_arg[better]
+        batch  = seeds[start:start+BATCH]
+        dx     = np.abs(flat_x[:, None] - batch[:, 0])
+        dy     = np.abs(flat_y[:, None] - batch[:, 1])
+        dx     = np.minimum(dx, width  - dx)
+        dy     = np.minimum(dy, height - dy)
+        dist   = dx*dx + dy*dy
+        lm     = dist.min(axis=1); la = dist.argmin(axis=1)
+        better = lm < min_d
+        min_d[better]   = lm[better]
+        nearest[better] = start + la[better]
 
     nearest = nearest.reshape(height, width)
     layer   = np.zeros((height, width, 3), dtype=np.uint8)
@@ -69,7 +72,6 @@ class RecursiveFractalGenerator(BaseGenerator):
 
     def generate(self, width, height, colors, params) -> np.ndarray:
         depth         = int(params.get("depth",           3))
-        # Honour external depth cap (set by evolution worker)
         depth         = min(depth, int(params.get("max_depth", depth)))
         base_seeds    = int(params.get("base_seeds",      6))
         multiplier    = int(params.get("seed_multiplier", 3))
@@ -81,22 +83,27 @@ class RecursiveFractalGenerator(BaseGenerator):
         rng = np.random.default_rng(seed)
         set_abort(False)
 
+        n = max(1, len(colors))
+        bg_idx, exclude = get_bg_params(params, n)
+        fg_colors = make_fg_colors(colors, bg_idx, exclude)
+
         n_seeds_0 = min(base_seeds, MAX_SEEDS_PER_LEVEL)
         seeds     = rng.uniform(0, 1, (n_seeds_0, 2)) * [width, height]
 
-        layer = _voronoi_layer(height, width, seeds, colors, rng, time.time() + TIME_LIMIT)
+        layer = _voronoi_layer(height, width, seeds, fg_colors, rng, time.time() + TIME_LIMIT)
         if layer is None:
             canvas = np.zeros((height, width, 3), dtype=np.uint8)
-            if colors: r, g, b = colors[0]; canvas[:] = (b, g, r)
+            r, g, b = colors[bg_idx]
+            canvas[:] = (int(b), int(g), int(r))
         else:
             canvas = layer
 
         for level in range(1, depth):
             if _abort_event.is_set():
                 break
-            n_s    = min(int(base_seeds * (multiplier ** level)), MAX_SEEDS_PER_LEVEL)
-            seeds  = rng.uniform(0, 1, (n_s, 2)) * [width, height]
-            layer  = _voronoi_layer(height, width, seeds, colors, rng, time.time() + TIME_LIMIT)
+            n_s   = min(int(base_seeds * (multiplier ** level)), MAX_SEEDS_PER_LEVEL)
+            seeds = rng.uniform(0, 1, (n_s, 2)) * [width, height]
+            layer = _voronoi_layer(height, width, seeds, fg_colors, rng, time.time() + TIME_LIMIT)
             if layer is None:
                 break
             canvas = cv2.addWeighted(canvas, 1.0 - level_opacity, layer, level_opacity, 0)
@@ -107,10 +114,6 @@ class RecursiveFractalGenerator(BaseGenerator):
             np.clip(canvas, 0, 255, out=canvas)
 
         if transparent:
-            bgr_c = colors[0]
-            mask  = np.all(canvas == (bgr_c[2], bgr_c[1], bgr_c[0]), axis=2)
-            bgra  = cv2.cvtColor(canvas, cv2.COLOR_BGR2BGRA)
-            bgra[mask, 3] = 0
-            return bgra
+            return apply_transparent_bg(canvas, colors, bg_idx)
 
         return canvas

@@ -5,9 +5,9 @@ and optional transparent background.
 from __future__ import annotations
 import numpy as np
 import cv2
-from generators.base import BaseGenerator
+from generators.base import BaseGenerator, get_bg_params
 from config.defaults import GENERATORS, RD_PRESETS
-from generators.blur_sharp import _toroidal_blur_2d
+from generators.blur_sharp import _toroidal_blur_2d, _colorise
 
 
 class ReactionDiffusionGenerator(BaseGenerator):
@@ -94,5 +94,6 @@ class ReactionDiffusionGenerator(BaseGenerator):
                 field = (field - mn) / (mx - mn)
 
         # Colourise
-        from generators.blur_sharp import _colorise
-        return _colorise(field, colors, "threshold", transparent)
+        n_c = max(1, len(colors))
+        bg_idx, exclude = get_bg_params(params, n_c)
+        return _colorise(field, colors, "threshold", transparent, bg_idx, exclude)
