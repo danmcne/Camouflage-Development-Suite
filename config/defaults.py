@@ -23,6 +23,20 @@ _TRANSPARENT_BG = {
     }
 }
 
+_BG_CONTROLS = {
+    "bg_color_idx": {
+        "default": 0, "min": 0, "max": 9, "step": 1,
+        "label": "Background colour index",
+        "tip": "Which palette colour is the background. Used for canvas fill and optionally for transparency.",
+    },
+    "exclude_bg_from_elements": {
+        "default": False, "type": "bool",
+        "label": "Exclude bg colour from elements",
+        "tip": "When checked, generated elements (shapes, cells, stripes) never use the background colour — it is reserved for the canvas fill.",
+    },
+}
+
+
 GENERATORS = {
     # ── Blur-Sharp ────────────────────────────────────────────────────────────
     "blur_sharp": {
@@ -61,6 +75,7 @@ GENERATORS = {
                          "tip": "threshold = sharp N-band quantisation; gradient = smooth interpolation."},
         "seed":         {"default": 42,   "min": 0,   "max": 99999, "step": 1,
                          "label": "Random seed",        "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -100,6 +115,7 @@ GENERATORS = {
                         "tip": ">1 stretches pattern horizontally; <1 vertically."},
         "seed":        {"default": 42,    "min": 0,    "max": 99999, "step": 1,
                         "label": "Random seed",        "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -125,6 +141,7 @@ GENERATORS = {
                         "tip": "threshold = equal bands; voronoi = nearest-centroid."},
         "seed":        {"default": 42,   "min": 0,   "max": 99999, "step": 1,
                         "label": "Random seed",        "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -160,6 +177,7 @@ GENERATORS = {
                           "tip": "Each tree picks a random palette colour."},
         "seed":          {"default": 42,   "min": 0,   "max": 99999, "step": 1,
                           "label": "Random seed",        "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -180,6 +198,7 @@ GENERATORS = {
                            "label": "Edge sharpening",   "tip": "Sharpens cell boundaries. 0=off."},
         "seed":           {"default": 42,  "min": 0,  "max": 99999,"step": 1,
                            "label": "Random seed",       "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -232,6 +251,7 @@ GENERATORS = {
                           "label": "Outline width (px)", "tip": "0 = no outline."},
         "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                           "label": "Random seed",        "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -276,6 +296,7 @@ GENERATORS = {
                               "tip": "How much the scale field modulates shape size."},
         "seed":              {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                               "label": "Random seed",        "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -306,6 +327,7 @@ GENERATORS = {
                           "tip": "How stripe layers combine. multiply=dark crossings, screen=bright, overlay=high contrast."},
         "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                           "label": "Random seed",       "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 
@@ -332,6 +354,7 @@ GENERATORS = {
                               "tip": "Alternate palette halves between zone colour pairs for max contrast."},
         "seed":              {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                               "label": "Random seed",       "tip": "Reproducibility."},
+        **_BG_CONTROLS,
         **_TRANSPARENT_BG,
     },
 }
