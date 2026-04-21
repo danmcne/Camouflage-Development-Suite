@@ -10,7 +10,9 @@ A desktop application for designing, generating, and evolving seamless camouflag
 
 This tool provides a complete workflow for camouflage pattern development:
 
-**Generate** patterns using nine different algorithmic methods → **Preview** them against real background images → **Evolve** them interactively or automatically toward better concealment → **Export** at high resolution.
+**Generate** patterns using nine different algorithmic methods → **Preview** them against real background images → **Evolve** them interactively or automatically toward better concealment → **Export** at 512x512, 1024x1024, 2048x2048, 4096x4096 or 8192x8192 resolution, in PNG, JPG or TIF format.
+
+Images exported in PNG can have the background color exported as transparent.
 
 All patterns use toroidal (wrap-around) geometry throughout, so every output tiles seamlessly at any size.
 
@@ -86,17 +88,17 @@ Each octave composites three palette colours: one for each axis and a third for 
 
 ### Colour Palette Editor
 
-- 2–10 colours with per-swatch colour picker, from 
+- 2–10 colours with per-swatch colour picker, from either a standard palette or from images
 - Lock individual colours so evolution further palette modification doesn't alter them
 - Extract a palette from a collection of images using k-means clustering
-- Six built-in presets: Military, Desert, Urban, Warm Urban, Woodland, Arctic
+- Nine built-in presets: Military, Desert, Urban, Warm Urban, Woodland, Arctic, Cool Hi-Contrast, Warm Hi-Contrast and Random
 - Extending a preset fills new slots with perceptually similar variants
 
 ---
 
 ### Second Generator Layer
 
-Any two generators can be composited with five blend modes (Normal, Multiply, Screen, Overlay, Soft Light) at adjustable opacity. Generators that support `transparent_bg` (Urban Geometric, Collage, Dazzle, Plaid) can be used as overlays without a solid background bleeding through.
+Any two generators can be composited with five blend modes (Normal, Multiply, Screen, Overlay, Soft Light) at adjustable opacity. Generators support `transparent_bg` and can be used as overlays without a solid background bleeding through.
 
 ---
 
