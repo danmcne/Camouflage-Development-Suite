@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QSplitter,
     QTabWidget, QFileDialog, QMessageBox, QApplication,
     QDialog, QVBoxLayout, QFormLayout, QComboBox,
-    QDialogButtonBox, QLabel,
+    QDialogButtonBox, QLabel, QStackedWidget,
 )
 from PyQt6.QtCore import Qt, QThread, QObject, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
@@ -182,8 +182,15 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._evo_panel,   "🧬 Evolution")
 
         self._splitter.addWidget(self._tabs)
+
+        # Right panel: stacked so palette tab shows image viewer, others show preview
+        self._right_stack = QStackedWidget()
         self._preview = PreviewCanvas()
-        self._splitter.addWidget(self._preview)
+        self._right_stack.addWidget(self._preview)                        # index 0
+        self._right_stack.addWidget(self._color_panel.image_viewer)       # index 1
+        self._right_stack.setCurrentIndex(0)
+
+        self._splitter.addWidget(self._right_stack)
         self._splitter.setStretchFactor(0, 0); self._splitter.setStretchFactor(1, 1)
         self._splitter.setSizes(self._normal_sizes)
         root.addWidget(self._splitter)
@@ -234,8 +241,13 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, idx):
         evo_idx = self._tabs.indexOf(self._evo_panel)
-        if idx == evo_idx: self._evo_panel.on_tab_activated()
-        else:              self._evo_panel.on_tab_deactivated()
+        pal_idx = self._tabs.indexOf(self._color_panel)
+        if idx == evo_idx:
+            self._evo_panel.on_tab_activated()
+        else:
+            self._evo_panel.on_tab_deactivated()
+        # Switch right panel: palette tab → image viewer; others → preview
+        self._right_stack.setCurrentIndex(1 if idx == pal_idx else 0)
 
     def _on_evo_fullwidth(self, expand):
         if expand:
@@ -243,9 +255,9 @@ class MainWindow(QMainWindow):
             total = sum(self._splitter.sizes())
             self._splitter.setSizes([total, 0])
             self._tabs.setMaximumWidth(16777215)
-            self._preview.setVisible(False)
+            self._right_stack.setVisible(False)
         else:
-            self._preview.setVisible(True)
+            self._right_stack.setVisible(True)
             self._tabs.setMaximumWidth(500)
             self._splitter.setSizes(self._normal_sizes)
 

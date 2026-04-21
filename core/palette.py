@@ -95,22 +95,29 @@ class ColorPalette:
 
 
     @classmethod
-    def from_images_kmeans(cls, image_paths: list, n_colors: int = 5,
-                            sample_per_image: int = 500):
+    def from_images_kmeans(cls, image_paths: list, n_colors: int = 5):
         """
         Extract a palette by running k-means over pixels sampled from multiple images.
-        Locked colours in any existing palette are handled by the caller (patch after).
+
+        Sampling strategy – equal weight per image, sublinear total growth:
+          per_image = max(150, round(2000 / sqrt(n_images)))
+
+          n=1 → 2000, n=4 → 1000, n=10 → 632  (total ~2000–6300, always manageable)
+
+        Locked colours are handled by the caller after this returns.
         """
-        import cv2
+        import math, cv2
         from sklearn.cluster import KMeans
+        n = max(1, len(image_paths))
+        per_image = max(150, int(round(2000 / math.sqrt(n))))
         all_pixels = []
         for path in image_paths:
             img = cv2.imread(path)
             if img is None:
                 continue
             pixels = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).reshape(-1, 3)
-            if len(pixels) > sample_per_image:
-                idx = np.random.choice(len(pixels), sample_per_image, replace=False)
+            if len(pixels) > per_image:
+                idx = np.random.choice(len(pixels), per_image, replace=False)
                 pixels = pixels[idx]
             all_pixels.append(pixels)
         if not all_pixels:
