@@ -336,8 +336,8 @@ class EvolutionPanel(QWidget):
 
         mode_g = QGroupBox("Evolution mode")
         mode_l = QVBoxLayout(mode_g)
-        self._mode_interactive = QRadioButton("Interactive (kill to select)")
-        self._mode_automatic   = QRadioButton("Automatic (fitness)")
+        self._mode_interactive = QRadioButton("Interactive\n(kill to discard)")
+        self._mode_automatic   = QRadioButton("Automatic\n(fitness)")
         self._mode_interactive.setChecked(True)
         mode_l.addWidget(self._mode_interactive); mode_l.addWidget(self._mode_automatic)
         ctrl.addWidget(mode_g)
@@ -348,7 +348,7 @@ class EvolutionPanel(QWidget):
         self._gen_combo = QComboBox()
         for nm in REGISTRY: self._gen_combo.addItem(nm)
         gen_l.addWidget(self._gen_combo)
-        self._layer2_check = QCheckBox("Evolve 2-layer stack (uses Generator tab L2)")
+        self._layer2_check = QCheckBox("Evolve 2-layer stack\n(Generator tab L2)")
         self._layer2_check.setToolTip(
             "Jointly evolves both generator layers using the L2 settings "
             "(generator, palette, blend, opacity) from the Generator tab. "
@@ -445,7 +445,11 @@ class EvolutionPanel(QWidget):
         self._bg_manager.set_active(i); self._update_canvas_bg()
 
     def _update_canvas_bg(self):
-        bg = self._bg_manager.get_active((1024, 1024))
+        #bg = self._bg_manager.get_active((1024, 1024))
+        W = max(self._moth_canvas.width(), 1)
+        H = max(self._moth_canvas.height(), 1)
+
+        bg = self._bg_manager.get_active((W, H))
         self._moth_canvas.set_background(bgr_to_qpixmap(bg) if bg is not None else None)
 
     # ── moth size ─────────────────────────────────────────────────────────────

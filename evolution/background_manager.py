@@ -57,7 +57,7 @@ class BackgroundManager:
             img = cv2.imread(path)
             if img is None:
                 return None
-            img = cv2.resize(img, size, interpolation=cv2.INTER_AREA)
+            img = self._resize_cover(img, size)
             self._cache[cache_key] = img
         return self._cache[cache_key]
 
@@ -83,3 +83,20 @@ class BackgroundManager:
         if not self._paths:
             return None
         return self.get_image(random.randrange(len(self._paths)), size)
+        
+    def _resize_cover(self, img, size):
+        W, H = size          # your convention
+        h, w = img.shape[:2] # numpy convention
+
+        scale = max(W / w, H / h)
+
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+        resized = cv2.resize(img, (new_w, new_h), interpolation=interp)
+
+        x0 = (new_w - W) // 2
+        y0 = (new_h - H) // 2
+
+        return resized[y0:y0+H, x0:x0+W]

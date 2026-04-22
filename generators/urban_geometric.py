@@ -111,6 +111,10 @@ class UrbanGeometricGenerator(BaseGenerator):
         bg_idx, exclude = get_bg_params(params, n)
         fg_colors = make_fg_colors(colors, bg_idx, exclude)
         nf = max(1, len(fg_colors))
+        range_min = min(scale_min, scale_max)
+        scale_max = max(scale_min, scale_max)
+        scale_min = range_min
+
 
         bg_r, bg_g, bg_b = colors[bg_idx]
         W, H = width, height

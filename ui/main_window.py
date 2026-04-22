@@ -237,6 +237,9 @@ class MainWindow(QMainWindow):
         self._gen_panel.set_palette(self._color_panel.get_palette(1), 1)
         self._evo_panel.set_palette(self._color_panel.get_palette(0))
 
+        # Apply initial tab state (signal not fired for the default tab at startup)
+        self._on_tab_changed(self._tabs.currentIndex())
+
     # ── tab management ────────────────────────────────────────────────────────
 
     def _on_tab_changed(self, idx):
