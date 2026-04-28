@@ -93,8 +93,10 @@ def _voronoi_layer(height, width, seeds, colors, rng, deadline,
     if warp is not None:
         dx_flat = warp[0].ravel()
         dy_flat = warp[1].ravel()
-        qx = np.clip(flat_x + dx_flat, 0, width  - 1)
-        qy = np.clip(flat_y + dy_flat, 0, height - 1)
+        # Wrap toroidally instead of clipping — clipping pins edge pixels
+        # to the boundary and creates a visible seam.
+        qx = (flat_x + dx_flat) % width
+        qy = (flat_y + dy_flat) % height
     else:
         qx, qy = flat_x, flat_y
 
