@@ -28,6 +28,7 @@ from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QFont
 from utils.rendering import bgr_to_qpixmap, make_thumbnail
 from evolution.background_manager import BackgroundManager
 from config.defaults import EVOLUTION, APP
+from core.vision_filters import apply_vision_filter, VISION_FILTERS
 
 
 # ── Moth ──────────────────────────────────────────────────────────────────────
@@ -175,13 +176,14 @@ class _EvoWorker(QObject):
     finished = pyqtSignal(list)
     error    = pyqtSignal(str)
 
-    def __init__(self, population, bg_manager, weights, size):
+    def __init__(self, population, bg_manager, weights, size, vision_filter="none"):
         super().__init__()
-        self._pop     = population
-        self._bg      = bg_manager
-        self._weights = weights
-        self._size    = size
-        self._abort   = False
+        self._pop           = population
+        self._bg            = bg_manager
+        self._weights       = weights
+        self._size          = size
+        self._vision_filter = vision_filter
+        self._abort         = False
 
     def abort(self): self._abort = True
 
@@ -256,7 +258,12 @@ class _EvoWorker(QObject):
 
             bg = self._bg.get_active(self._size) if len(self._bg) else None
             if bg is not None:
-                try:    scores = composite_fitness(img, bg, self._weights)
+                try:
+                    # Apply animal vision filter to both images before scoring
+                    vf   = self._vision_filter
+                    img_v = apply_vision_filter(img, vf)
+                    bg_v  = apply_vision_filter(bg,  vf)
+                    scores = composite_fitness(img_v, bg_v, self._weights)
                 except Exception:
                     scores = {"color":0.,"texture":0.,"disruption":0.,"total":0.}
             else:
@@ -291,6 +298,7 @@ class EvolutionPanel(QWidget):
         self._seed_gen_hint:    str | None  = None
         # Injected by main_window: callable() → L2 config dict | None
         self._layer2_provider = None
+        self._vision_filter   = "none"   # active animal vision filter key
         self._build_ui()
 
     def _build_ui(self):
@@ -401,6 +409,25 @@ class EvolutionPanel(QWidget):
         self._stop_btn.setEnabled(False)
         self._stop_btn.clicked.connect(self._on_stop); ctrl.addWidget(self._stop_btn)
 
+        # ── Vision filter ──────────────────────────────────────────────────────
+        vis_g = QGroupBox("Animal vision filter")
+        vis_g.setToolTip(
+            "Simulate how a game animal perceives the scene.\n"
+            "Applied to both moth thumbnails and background display.\n"
+            "When active, fitness is also evaluated through that animal's\n"
+            "colour vision — evolution optimises for concealment from that animal.")
+        vis_l = QVBoxLayout(vis_g)
+        vis_l.setSpacing(2)
+        self._vis_combo = QComboBox()
+        for key, (label, _) in VISION_FILTERS.items():
+            self._vis_combo.addItem(label, userData=key)
+        self._vis_combo.currentIndexChanged.connect(self._on_vision_changed)
+        vis_l.addWidget(self._vis_combo)
+        info = QLabel("Filter applies to display\nand fitness evaluation.")
+        info.setStyleSheet("color:#888;font-size:9px;")
+        vis_l.addWidget(info)
+        ctrl.addWidget(vis_g)
+
         ctrl.addStretch()
         cw2 = QWidget(); cw2.setFixedWidth(200); cw2.setLayout(ctrl)
         root.addWidget(cw2)
@@ -409,6 +436,18 @@ class EvolutionPanel(QWidget):
 
     def _on_click_mode_changed(self, kill_checked):
         self._moth_canvas.set_kill_mode(kill_checked)
+
+    # ── vision filter ─────────────────────────────────────────────────────────
+
+    def _on_vision_changed(self, _idx: int):
+        self._vision_filter = self._vis_combo.currentData()
+        # Refresh display immediately with current results
+        self._update_canvas_bg()
+        if self._results:
+            self._place_moths(self._results)
+
+    def _apply_vision(self, img_bgr: np.ndarray) -> np.ndarray:
+        return apply_vision_filter(img_bgr, self._vision_filter)
 
     # ── backgrounds ───────────────────────────────────────────────────────────
 
@@ -445,11 +484,13 @@ class EvolutionPanel(QWidget):
         self._bg_manager.set_active(i); self._update_canvas_bg()
 
     def _update_canvas_bg(self):
-        #bg = self._bg_manager.get_active((1024, 1024))
         W = max(self._moth_canvas.width(), 1)
         H = max(self._moth_canvas.height(), 1)
 
         bg = self._bg_manager.get_active((W, H))
+        #bg = self._bg_manager.get_active((1024, 1024))
+        if bg is not None:
+            bg = self._apply_vision(bg)
         self._moth_canvas.set_background(bgr_to_qpixmap(bg) if bg is not None else None)
 
     # ── moth size ─────────────────────────────────────────────────────────────
@@ -469,6 +510,7 @@ class EvolutionPanel(QWidget):
         moths = []; positions = []
         for i, (img, scores, gn1, p1, gn2, p2) in enumerate(results):
             display = _composite_for_display(img)
+            display = self._apply_vision(display)   # apply animal vision filter
             th  = make_thumbnail(display, sz)
             pix = bgr_to_qpixmap(th)
             for _ in range(40):
@@ -593,7 +635,8 @@ class EvolutionPanel(QWidget):
 
         self._thread = QThread()
         self._worker = _EvoWorker(self._population, self._bg_manager,
-                                  self._get_weights(), APP["preview_size"])
+                                  self._get_weights(), APP["preview_size"],
+                                  vision_filter=self._vision_filter)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.progress.connect(self._progress.setValue)

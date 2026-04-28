@@ -8,6 +8,7 @@ from generators.urban_geometric    import UrbanGeometricGenerator
 from generators.collage            import CollageGenerator
 from generators.dazzle             import DazzleGenerator
 from generators.plaid              import PlaidGenerator
+from generators.digital_camo       import DigitalCamoGenerator
 
 REGISTRY: dict[str, type] = {
     "Procedural Noise":   ProceduralNoiseGenerator,
@@ -19,6 +20,7 @@ REGISTRY: dict[str, type] = {
     "Collage":            CollageGenerator,
     "Dazzle":             DazzleGenerator,
     "Plaid":              PlaidGenerator,
+    "Digital Camo":       DigitalCamoGenerator,
 }
 
 def get_generator(name: str):

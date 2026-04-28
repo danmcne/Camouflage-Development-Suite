@@ -293,7 +293,7 @@ class _PaletteEditor(QWidget):
         ("❄  Arctic",    "arctic_preset"),
         ("❄🌑 Cool Hi",  "cool_contrast_preset"),
         ("☀🌑 Warm Hi",  "warm_contrast_preset"),
-        ("👾🤖 Neon",     "neon_preset"), 
+        ("👾🤖 Neon",     "neon_preset"),
         ("🎲 Random",     None),
     ]
 

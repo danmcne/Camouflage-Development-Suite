@@ -25,7 +25,7 @@ def rgb_to_lab(rgb) -> np.ndarray:
 def delta_e(a, b) -> float:
     return float(np.linalg.norm(np.asarray(a,float) - np.asarray(b,float)))
 
-def _similar_color(hex_color: str, variation=0.09) -> str:
+def _similar_color(hex_color: str, variation=0.1) -> str:
     r,g,b = hex_to_rgb(hex_color)
     h,s,v = colorsys.rgb_to_hsv(r/255,g/255,b/255)
     h = (h + random.uniform(-variation, variation)) % 1.0
@@ -33,6 +33,101 @@ def _similar_color(hex_color: str, variation=0.09) -> str:
     v = max(0.1, min(0.95, v + random.uniform(-variation*0.5, variation*0.5)))
     rn,gn,bn = colorsys.hsv_to_rgb(h,s,v)
     return rgb_to_hex(int(rn*255),int(gn*255),int(bn*255))
+    
+    
+def _similar_color_kde(palette_hex, sigma=12.0) -> str:
+    import numpy as np
+    import cv2
+
+    labs = []
+    for c in palette_hex:
+        r, g, b = hex_to_rgb(c)
+        lab = cv2.cvtColor(np.array([[[r, g, b]]], dtype=np.uint8), cv2.COLOR_RGB2LAB)[0, 0]
+        labs.append(lab)
+
+    X = np.array(labs, dtype=np.float32)
+
+    i = np.random.randint(len(X))
+    base = X[i]
+
+    jitter = np.random.normal(0, sigma, size=3)
+
+    sample = np.clip(base + jitter, 0, 255).astype(np.uint8)
+
+    rgb = cv2.cvtColor(np.array([[sample]], dtype=np.uint8), cv2.COLOR_LAB2RGB)[0, 0]
+    return rgb_to_hex(*rgb)
+    
+import numpy as np
+import colorsys
+
+def hex_to_hsv_vec(c):
+    r, g, b = hex_to_rgb(c)
+    return np.array(colorsys.rgb_to_hsv(r/255, g/255, b/255), dtype=np.float32)
+    
+def fit_gaussian(palette):
+    X = np.array([hex_to_hsv_vec(c) for c in palette], dtype=np.float32)
+    mu = X.mean(axis=0)
+    cov = np.cov(X.T) + np.eye(3) * 1e-6
+    return mu, cov
+    
+def sample_gaussian(mu, cov, k=30):
+    return np.random.multivariate_normal(mu, cov, size=k)
+    
+def hsv_dist(a, b):
+    dh = min(abs(a[0] - b[0]), 1 - abs(a[0] - b[0]))
+    ds = (a[1] - b[1])*(a[1]+b[1])*(2.0-a[1]-b[1])
+    dv = (a[2] - b[2])*(a[2]+b[2])*(2.0-a[2]-b[2])
+    return np.sqrt(dh*dh + ds*ds + dv*dv)
+    
+def hsv_dist(a, b):
+    # circular hue distance
+    dh = min(abs(a[0] - b[0]), 1 - abs(a[0] - b[0]))
+
+    s_mean = 0.5 * (a[1] + b[1])
+    v_mean = 0.5 * (a[2] + b[2])
+
+    # chroma proxy
+    chroma = s_mean * v_mean
+
+    # visibility of hue (kills hue near black/white)
+    vis = 1.0 - 2.0 * abs(v_mean - 0.5)
+
+    # combined gating
+    hue_weight = chroma * vis
+
+    dh_eff = dh * hue_weight
+
+    ds = a[1] - b[1]
+    dv = a[2] - b[2]
+
+    return np.sqrt(dh_eff*dh_eff + ds*ds + dv*dv)
+    
+def pick_farthest(sampled, palette):
+    palette_hsv = np.array([hex_to_hsv_vec(c) for c in palette], dtype=np.float32)
+
+    best = None
+    best_score = -1
+
+    for s in sampled:
+        # distance to closest existing palette color
+        d = np.min([hsv_dist(s, p) for p in palette_hsv])
+
+        if d > best_score:
+            best_score = d
+            best = s
+
+    return best
+    
+def similar_color_gaussian_maximin(palette, k=30):
+    mu, cov = fit_gaussian(palette)
+    samples = sample_gaussian(mu, cov, k)
+
+    best = pick_farthest(samples, palette)
+
+    r, g, b = colorsys.hsv_to_rgb(*np.clip(best, 0, 1))
+    return rgb_to_hex(int(r*255), int(g*255), int(b*255))
+    
+    
 
 
 class ColorPalette:
@@ -68,6 +163,26 @@ class ColorPalette:
                         self.remove(j); break
                 else:
                     self.remove(len(self._colors)-1)
+                    
+    def resize_to(self, n: int):
+    	current = len(self._colors)
+
+    	if current == 0:
+    	    return
+
+    	if n > current:
+    	    for i in range(n - current):
+    	        new_color = similar_color_gaussian_maximin(self._colors, 8)
+    	        self.append(new_color)
+
+    	elif n < current:
+    	    while len(self._colors) > n:
+    	        for j in range(len(self._colors) - 1, -1, -1):
+    	            if not self._locked[j]:
+    	                self.remove(j)
+    	                break
+    	        else:
+    	            self.remove(len(self._colors) - 1)
 
     def as_rgb(self):  return [hex_to_rgb(c) for c in self._colors]
     def as_bgr(self):  return [(b,g,r) for r,g,b in self.as_rgb()]

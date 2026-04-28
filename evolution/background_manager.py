@@ -84,6 +84,7 @@ class BackgroundManager:
             return None
         return self.get_image(random.randrange(len(self._paths)), size)
         
+        
     def _resize_cover(self, img, size):
         W, H = size          # your convention
         h, w = img.shape[:2] # numpy convention
