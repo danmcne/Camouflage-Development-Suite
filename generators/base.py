@@ -115,11 +115,15 @@ class BaseGenerator(ABC):
         }
         """
 
-    def mutate(self, params: dict, strength: float = 0.15) -> dict:
+    def mutate(self, params: dict, strength: float = 0.15,
+               locked: set | None = None) -> dict:
         schema     = self.get_param_schema()
         new_params = copy.deepcopy(params)
+        locked     = locked or set()
         for key, spec in schema.items():
             if not spec.get("evolvable", True):
+                continue
+            if key in locked:
                 continue
             if key not in new_params:
                 continue
@@ -142,13 +146,17 @@ class BaseGenerator(ABC):
                     new_params[key] = random.choice(spec["options"])
         return new_params
 
-    def crossover(self, params_a: dict, params_b: dict) -> dict:
+    def crossover(self, params_a: dict, params_b: dict,
+                  locked: set | None = None) -> dict:
         schema = self.get_param_schema()
         child  = copy.deepcopy(params_a)
+        locked = locked or set()
         for key in schema:
             if key not in params_a or key not in params_b:
                 continue
             if not schema[key].get("evolvable", True):
+                continue
+            if key in locked:
                 continue
             a, b = params_a[key], params_b[key]
             if isinstance(a, (int, float)) and isinstance(b, (int, float)):

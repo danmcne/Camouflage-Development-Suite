@@ -228,6 +228,17 @@ class _EvoWorker(QObject):
             except Exception:
                 img = np.zeros((self._size[1], self._size[0], 3), dtype=np.uint8)
 
+            # Apply digitalization if requested (same logic as main_window worker)
+            try:
+                from utils.image_ops import apply_digitalization, apply_diagonal_digitalization
+                dlevel = int(params.get("digitalize_level", 0))
+                ddiag  = bool(params.get("digitalize_diagonal", False))
+                if dlevel > 0:
+                    img = (apply_diagonal_digitalization(img, dlevel)
+                           if ddiag else apply_digitalization(img, dlevel))
+            except Exception:
+                pass
+
             # Flatten L1 alpha before blending (L2 alpha handled in _blend_bgr)
             if img.ndim == 3 and img.shape[2] == 4:
                 img = _composite_for_display(img)
@@ -246,6 +257,16 @@ class _EvoWorker(QObject):
                 try:
                     img2 = gen2.generate(self._size[0], self._size[1],
                                          colors2_rgb, params2)
+                    # Apply digitalization to layer 2 as well
+                    try:
+                        from utils.image_ops import apply_digitalization, apply_diagonal_digitalization
+                        dlevel2 = int(params2.get("digitalize_level", 0))
+                        ddiag2  = bool(params2.get("digitalize_diagonal", False))
+                        if dlevel2 > 0:
+                            img2 = (apply_diagonal_digitalization(img2, dlevel2)
+                                    if ddiag2 else apply_digitalization(img2, dlevel2))
+                    except Exception:
+                        pass
                     # _blend_bgr handles BGRA overlay correctly
                     img  = _blend_bgr(img, img2, ind.blend_mode2, ind.opacity2)
                 except Exception:
@@ -296,6 +317,8 @@ class EvolutionPanel(QWidget):
         self._moths: list[Moth] = []
         self._seed_params_hint: dict | None = None
         self._seed_gen_hint:    str | None  = None
+        self._locked_params: set[str] = set()
+        self._locked_params2: set[str] = set()
         # Injected by main_window: callable() → L2 config dict | None
         self._layer2_provider = None
         self._vision_filter   = "none"   # active animal vision filter key
@@ -484,11 +507,12 @@ class EvolutionPanel(QWidget):
         self._bg_manager.set_active(i); self._update_canvas_bg()
 
     def _update_canvas_bg(self):
-        W = max(self._moth_canvas.width(), 1)
-        H = max(self._moth_canvas.height(), 1)
-
-        bg = self._bg_manager.get_active((W, H))
-        #bg = self._bg_manager.get_active((1024, 1024))
+        # Always request at a large fixed resolution so the BackgroundManager's
+        # cover-resize never over-crops the image.  The MothCanvas paintEvent
+        # re-scales it with KeepAspectRatioByExpanding, giving the correct
+        # minimal-zoom-and-crop result regardless of the current canvas size.
+        LARGE = 2048
+        bg = self._bg_manager.get_active((LARGE, LARGE))
         if bg is not None:
             bg = self._apply_vision(bg)
         self._moth_canvas.set_background(bgr_to_qpixmap(bg) if bg is not None else None)
@@ -553,6 +577,15 @@ class EvolutionPanel(QWidget):
 
     def _on_run(self):
         from evolution.population import Population
+
+        # Always read the freshest locked params directly from the generator panel
+        # (covers the case where lock state changed but lock_changed signal wasn't
+        # fired because no param value changed simultaneously)
+        gen_panel = getattr(self, "_gen_panel_ref", None)
+        if gen_panel is not None:
+            self._locked_params  = gen_panel.get_locked_params()
+            self._locked_params2 = gen_panel.get_locked_params2()
+
         gen_name = self._gen_combo.currentText()
         l2       = self._get_l2_config()
 
@@ -573,12 +606,15 @@ class EvolutionPanel(QWidget):
             size            = self._pop_spin.value(),
             generator_type  = gen_name,
             colors          = self._palette or [],
+            base_params     = self._seed_params_hint or {},
             use_layer2      = l2 is not None,
             generator_type2 = l2["generator"] if l2 else "",
             base_params2    = l2["params"]    if l2 else {},
             blend_mode2     = l2["blend"]     if l2 else "normal",
             opacity2        = l2["opacity"]   if l2 else 0.5,
             colors2         = colors2_hex,
+            locked_params   = self._locked_params,
+            locked_params2  = self._locked_params2,
         )
 
         if self._seed_gen_hint == gen_name and self._seed_params_hint:
@@ -587,7 +623,13 @@ class EvolutionPanel(QWidget):
             gen = get_generator(gen_name)
             pop.individuals = []
             for _ in range(pop.size):
-                mutated = gen.mutate(copy.deepcopy(self._seed_params_hint), strength=0.2)
+                mutated = gen.mutate(copy.deepcopy(self._seed_params_hint),
+                                     strength=0.2,
+                                     locked=self._locked_params)
+                # Hard-restore locked params from the hint values
+                for k in self._locked_params:
+                    if k in self._seed_params_hint:
+                        mutated[k] = self._seed_params_hint[k]
                 ind = CamoPattern(generator_type=gen_name, params=mutated,
                                   colors=list(self._palette or []))
                 if l2 is not None:
@@ -676,6 +718,14 @@ class EvolutionPanel(QWidget):
         self._seed_params_hint = params
         if self._gen_combo.findText(gen_name) >= 0:
             self._gen_combo.setCurrentText(gen_name)
+
+    def set_locked_params(self, locked: set[str]):
+        """Called by MainWindow whenever the user toggles a lock checkbox."""
+        self._locked_params = locked
+
+    def set_locked_params2(self, locked: set[str]):
+        """Called by MainWindow whenever the user toggles a layer-2 lock checkbox."""
+        self._locked_params2 = locked
 
     def on_tab_activated(self):
         self.wants_fullwidth.emit(True); self._update_canvas_bg()

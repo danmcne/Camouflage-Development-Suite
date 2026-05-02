@@ -100,6 +100,70 @@ def load_image_bgr(path: str) -> np.ndarray:
     return img
 
 
+def apply_digitalization(img: np.ndarray, level: int) -> np.ndarray:
+    """
+    Axis-aligned pixelation: subsample every 2^level pixels then upscale NN.
+    Palette colours are preserved exactly. level 0 = no-op.
+    """
+    if level <= 0:
+        return img
+    step = 1 << level
+    H, W = img.shape[:2]
+    small = img[::step, ::step]
+    return cv2.resize(small, (W, H), interpolation=cv2.INTER_NEAREST)
+
+
+def apply_diagonal_digitalization(img: np.ndarray, level: int) -> np.ndarray:
+    """
+    Diagonal (45°) block-quantisation using integer-lattice diamond tiles.
+
+    Root cause of the "X seam": using fractional normalised coordinates
+    (xs/W ± ys/H) introduces branch cuts at xs/W = ys/H and xs/W = 1-ys/H
+    — two diagonal lines that cross at the image centre, forming an X.
+    The underlying transform has determinant 2 (not ±1), so it identifies
+    pairs of points across those lines, creating visible discontinuities.
+
+    Fix: stay entirely in Z² — use integer diagonal coordinates with
+    no fractional normalisation.  The integer lattice has no branch cuts.
+
+    Algorithm:
+      d1 = (xs + ys) mod 2W      ← one integer diagonal coordinate
+      d2 = (xs − ys) mod 2H      ← other integer diagonal coordinate
+      Quantise: q1 = (d1 // step) * step
+                q2 = (d2 // step) * step
+      Invert (exact, step is even so division by 2 is exact):
+                xi = ((q1 + q2) // 2) % W
+                yi = ((q1 − q2) // 2) % H
+      Output pixel → img[yi, xi]
+
+    Tileability: at xs+W, d1 shifts by W → q1 shifts by W (since step|W
+    for power-of-2 step and power-of-2 canvas) → xi unchanged mod W ✓.
+    Same at ys+H. Output is EXACTLY W×H-periodic with no X seam.
+
+    Palette colours are preserved exactly (nearest-neighbour, no blending).
+    """
+    if level <= 0:
+        return img.copy()
+    step = 1 << level   # always even for level >= 1
+    H, W = img.shape[:2]
+    ys, xs = np.mgrid[0:H, 0:W]
+
+    # Integer diagonal coordinates — no fractional normalisation
+    d1 = (xs + ys) % (2 * W)
+    d2 = (xs - ys) % (2 * H)
+
+    # Quantise to diamond block (q1, q2 are both multiples of step)
+    q1 = (d1 // step) * step
+    q2 = (d2 // step) * step
+
+    # Invert: d1 = xs+ys, d2 = xs-ys  →  xs = (d1+d2)/2, ys = (d1-d2)/2
+    # step is even → q1, q2 are even → division by 2 is always exact
+    xi = ((q1 + q2) // 2) % W
+    yi = ((q1 - q2) // 2) % H
+
+    return img[yi.astype(np.int64), xi.astype(np.int64)]
+
+
 def tile_pattern(pattern: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
     ph, pw = pattern.shape[:2]
     reps_y = (target_h + ph - 1) // ph

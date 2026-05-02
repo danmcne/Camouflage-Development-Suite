@@ -9,6 +9,9 @@ from generators.collage            import CollageGenerator
 from generators.dazzle             import DazzleGenerator
 from generators.plaid              import PlaidGenerator
 from generators.digital_camo       import DigitalCamoGenerator
+from generators.argyle             import ArgyleGenerator
+from generators.african_pattern    import AfricanPatternGenerator
+from generators.japanese_pattern   import JapanesePatternGenerator
 
 REGISTRY: dict[str, type] = {
     "Procedural Noise":   ProceduralNoiseGenerator,
@@ -21,6 +24,9 @@ REGISTRY: dict[str, type] = {
     "Dazzle":             DazzleGenerator,
     "Plaid":              PlaidGenerator,
     "Digital Camo":       DigitalCamoGenerator,
+    "Argyle":             ArgyleGenerator,
+    "African Pattern":    AfricanPatternGenerator,
+    "Japanese Pattern":   JapanesePatternGenerator,
 }
 
 def get_generator(name: str):

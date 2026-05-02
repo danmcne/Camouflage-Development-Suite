@@ -20,7 +20,9 @@ class Population:
                  base_params2: dict | None = None,
                  blend_mode2: str = "normal",
                  opacity2: float = 0.5,
-                 colors2: list[str] | None = None):
+                 colors2: list[str] | None = None,
+                 locked_params: set | None = None,
+                 locked_params2: set | None = None):
         self.size            = size
         self.generator_type  = generator_type
         self.colors          = colors or []
@@ -31,6 +33,8 @@ class Population:
         self.blend_mode2     = blend_mode2
         self.opacity2        = opacity2
         self.colors2         = colors2 or []
+        self.locked_params   = set(locked_params)  if locked_params  else set()
+        self.locked_params2  = set(locked_params2) if locked_params2 else set()
         self.individuals: list[CamoPattern] = []
         self.generation      = 0
 
@@ -43,18 +47,19 @@ class Population:
         for _ in range(self.size):
             params = gen.default_params()
             params.update(self.base_params)
-            params = gen.mutate(params, strength=0.5)
+            params = gen.mutate(params, strength=0.5, locked=self.locked_params)
+            # Always restore locked and non-evolvable keys from base_params
             for k, v in self.base_params.items():
-                if not schema.get(k, {}).get("evolvable", True):
+                if not schema.get(k, {}).get("evolvable", True) or k in self.locked_params:
                     params[k] = v
             p = CamoPattern(generator_type=self.generator_type,
                             params=params, colors=list(self.colors))
             if gen2 is not None:
                 params2 = gen2.default_params()
                 params2.update(self.base_params2)
-                params2 = gen2.mutate(params2, strength=0.5)
+                params2 = gen2.mutate(params2, strength=0.5, locked=self.locked_params2)
                 for k, v in self.base_params2.items():
-                    if not schema2.get(k, {}).get("evolvable", True):
+                    if not schema2.get(k, {}).get("evolvable", True) or k in self.locked_params2:
                         params2[k] = v
                 p.generator_type2 = self.generator_type2
                 p.params2         = params2
@@ -78,18 +83,28 @@ class Population:
         next_gen = self.individuals[:elitism]
         while len(next_gen) < self.size:
             pa = self.tournament_select(); pb = self.tournament_select()
-            child_params = (gen.crossover(pa.params, pb.params)
+            child_params = (gen.crossover(pa.params, pb.params, locked=self.locked_params)
                             if random.random() < crossover_rate
                             else copy.deepcopy(pa.params))
-            child_params = gen.mutate(child_params, mutation_strength)
+            child_params = gen.mutate(child_params, mutation_strength, locked=self.locked_params)
+            # Restore locked params from best parent
+            for k in self.locked_params:
+                if k in pa.params:
+                    child_params[k] = pa.params[k]
             child = CamoPattern(generator_type=self.generator_type,
                                 params=child_params, colors=list(self.colors),
                                 generation=self.generation + 1)
             if gen2 is not None:
-                child_params2 = (gen2.crossover(pa.params2, pb.params2)
+                child_params2 = (gen2.crossover(pa.params2, pb.params2,
+                                                   locked=self.locked_params2)
                                  if random.random() < crossover_rate
                                  else copy.deepcopy(pa.params2))
-                child_params2 = gen2.mutate(child_params2, mutation_strength)
+                child_params2 = gen2.mutate(child_params2, mutation_strength,
+                                            locked=self.locked_params2)
+                # Restore locked L2 params from best parent
+                for k in self.locked_params2:
+                    if k in pa.params2:
+                        child_params2[k] = pa.params2[k]
                 child.generator_type2 = self.generator_type2
                 child.params2         = child_params2
                 child.blend_mode2     = self.blend_mode2

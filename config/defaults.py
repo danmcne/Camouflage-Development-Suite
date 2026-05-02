@@ -14,6 +14,28 @@ APP = {
 # When True the first palette colour becomes fully transparent (alpha=0).
 # Useful when using the generator as a second layer.
 
+_DIGITALIZE_CONTROL = {
+    "digitalize_level": {
+        "default": 0, "min": 0, "max": 6, "step": 1,
+        "label": "Digitalize level",
+        "tip": (
+            "Pixelate the output by subsampling then upscaling with no interpolation. "
+            "0=off, 1=2×2 blocks, 2=4×4, …, k=2^k×2^k blocks. "
+            "Palette colours are preserved exactly (no blending)."
+        ),
+    },
+    "digitalize_diagonal": {
+        "default": False, "type": "bool",
+        "label": "Diagonal digitalize (45°)",
+        "tip": (
+            "Tile 3×3 → rotate 45° → subsample → rotate back → crop centre. "
+            "Produces diagonal pixel blocks while remaining seamlessly tileable. "
+            "Has no effect when Digitalize level is 0."
+        ),
+        "evolvable": False,
+    },
+}
+
 _TRANSPARENT_BG = {
     "transparent_bg": {
         "default": False, "type": "bool",
@@ -49,15 +71,6 @@ GENERATORS = {
         "blur_angle":   {"default": 0.0,  "min": -90.0, "max": 90.0, "step": 5.0,
                          "label": "Blur angle (°)",
                          "tip": "Rotate the blur direction. 0=axis-aligned, 45=diagonal stripes, etc."},
-        "sigma_x2":     {"default": 0.0,  "min": 0.0, "max": 30.0, "step": 0.5,
-                         "label": "Blur 2 σ X",
-                         "tip": "Second blur pass X radius (0 = disabled). Adds a crossing direction for plaid/diamond effects."},
-        "sigma_y2":     {"default": 0.0,  "min": 0.0, "max": 30.0, "step": 0.5,
-                         "label": "Blur 2 σ Y",
-                         "tip": "Second blur pass Y radius."},
-        "blur_angle2":  {"default": 45.0, "min": -90.0, "max": 90.0, "step": 5.0,
-                         "label": "Blur 2 angle (°)",
-                         "tip": "Angle for the second blur pass. 90° from the first gives crossing stripes."},
         "iterations":   {"default": 12,   "min": 1,   "max": 25,   "step": 1,
                          "label": "Iterations",
                          "tip": "Rounds of blur+sharpen. 8–15 is typical; pattern stabilises quickly."},
@@ -88,6 +101,7 @@ GENERATORS = {
         "seed":         {"default": 42,   "min": 0,   "max": 99999, "step": 1,
                          "label": "Random seed",        "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -128,15 +142,16 @@ GENERATORS = {
         "seed":        {"default": 42,    "min": 0,    "max": 99999, "step": 1,
                         "label": "Random seed",        "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
     # ── Procedural Noise ──────────────────────────────────────────────────────
     "procedural_noise": {
         "noise_type":  {"default": "seamless_perlin",
-                        "options": ["seamless_perlin", "rotated_perlin"],
+                        "options": ["seamless_perlin", "seamless_simplex"],
                         "label": "Noise type",
-                        "tip": "seamless_perlin = standard; rotated_perlin = rotated domain (reduces axis-aligned bias)."},
+                        "tip": "seamless_perlin = standard Perlin with toroidal repeat; seamless_simplex = 4D torus simplex (no linear artefacts, no repeat boundary)."},
         "octaves":     {"default": 6,    "min": 1,   "max": 12,   "step": 1,
                         "label": "Octaves",            "tip": "Layers of detail."},
         "persistence": {"default": 0.5,  "min": 0.1, "max": 1.0,  "step": 0.05,
@@ -155,6 +170,7 @@ GENERATORS = {
         "seed":        {"default": 42,   "min": 0,   "max": 99999, "step": 1,
                         "label": "Random seed",        "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -191,6 +207,7 @@ GENERATORS = {
         "seed":          {"default": 42,   "min": 0,   "max": 99999, "step": 1,
                           "label": "Random seed",        "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -221,6 +238,7 @@ GENERATORS = {
         "seed":           {"default": 42,  "min": 0,  "max": 99999,"step": 1,
                            "label": "Random seed",       "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -274,6 +292,7 @@ GENERATORS = {
         "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                           "label": "Random seed",        "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -328,6 +347,7 @@ GENERATORS = {
         "seed":              {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                               "label": "Random seed",        "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -359,6 +379,7 @@ GENERATORS = {
         "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                           "label": "Random seed",       "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -392,6 +413,7 @@ GENERATORS = {
         "seed":              {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                               "label": "Random seed",       "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 
@@ -409,12 +431,111 @@ GENERATORS = {
         "level_scale":   {"default": 2.5,  "min": 1.5, "max": 5.0, "step": 0.5,
                           "label": "Level scale factor",
                           "tip": "How much larger each successive level is. 2.5 = each level is 2.5× coarser."},
-        "angle":         {"default": 0.0,  "min": -45.0,"max":45.0,"step": 5.0,
-                          "label": "Diagonal angle (°)",
-                          "tip": "0=axis-aligned blocks; non-zero rotates the pixel grid for angular edges."},
+        "angle":         {"default": "0", "options": ["0", "45"],
+                          "label": "Pixel grid angle",
+                          "tip": "0=axis-aligned blocks (seamless). 45=diagonal pixel grid via 3×3 tile (also seamless).",
+                          "evolvable": False},
         "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
                           "label": "Random seed",       "tip": "Reproducibility."},
         **_BG_CONTROLS,
+        **_TRANSPARENT_BG,
+    },
+
+    # ── Argyle ────────────────────────────────────────────────────────────────
+    # Argyle is a special case of the plaid generator with acute diamond angles.
+    "argyle": {
+        "diamond_ratio": {"default": "1:1 (square)",
+                          "options": ["4:1 (tall x4)", "3:1 (tall x3)", "2:1 (tall x2)",
+                                      "1:1 (square)", "1:2 (wide x2)", "1:3 (wide x3)", "1:4 (wide x4)"],
+                          "label": "Diamond shape (across:down)",
+                          "tip": ("Ratio of diamonds-across to diamonds-down. "
+                                  "1:1=square, 2:1=twice as many across (wide), 1:2=twice as many down (tall). "
+                                  "All ratios tile a square canvas seamlessly."),
+                          "evolvable": False},
+        "n_base":        {"default": 4,    "min": 1,   "max": 24,  "step": 1,
+                          "label": "Diamond count",
+                          "tip": ("Approximate number of diamonds across the canvas. "
+                                  "The actual count may be slightly adjusted (up, never below) "
+                                  "to guarantee seamless colour with the current palette size.")},
+        "num_scales":    {"default": 1,    "min": 1,   "max": 4,   "step": 1,
+                          "label": "Overlay scales",
+                          "tip": "Number of nested argyle overlays (1=single, 2+=adds finer grid lines)."},
+        "edge_softness": {"default": 0.15, "min": 0.0, "max": 0.49,"step": 0.01,
+                          "label": "Edge softness",
+                          "tip": ("0=crisp hard-edge diamonds. Higher values blend the edges. "
+                                  "At 0.49 the diamonds almost fully overlap (very soft gradient).")},
+        "show_lines":    {"default": True, "type": "bool",
+                          "label": "Overlay crossing lines",
+                          "tip": "Draw the characteristic thin crossing lines inside the diamonds."},
+        "line_width":    {"default": 0.03, "min": 0.005,"max": 0.15,"step": 0.005,
+                          "label": "Line width (rel.)",
+                          "tip": "Thickness of overlay lines relative to diamond period."},
+        "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
+                          "label": "Random seed",       "tip": "Reproducibility."},
+        **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
+        **_TRANSPARENT_BG,
+    },
+
+    # ── African Pattern ───────────────────────────────────────────────────────
+    "african_pattern": {
+        "motif":         {"default": "kente",
+                          "options": ["kente", "kuba", "adinkra", "mudcloth"],
+                          "label": "Motif style",
+                          "tip": ("kente=interlocked horizontal bands with geometric fills; "
+                                  "kuba=interlaced square-spiral / guilloche cells; "
+                                  "adinkra=symbol stamps on grid; "
+                                  "mudcloth=bold opposing-line mud-cloth grid."),
+                          "evolvable": False},
+        "cell_size":     {"default": 48,   "min": 16,  "max": 160, "step": 4,
+                          "label": "Cell size (px)",
+                          "tip": "Base tile size for the motif grid."},
+        "band_height":   {"default": 32,   "min": 8,   "max": 128, "step": 4,
+                          "label": "Band height (px)",
+                          "tip": "[kente/mudcloth] Height of each horizontal colour band."},
+        "fill_density":  {"default": 0.5,  "min": 0.1, "max": 1.0, "step": 0.05,
+                          "label": "Fill density",
+                          "tip": "Proportion of cells / area filled with pattern elements."},
+        "line_width":    {"default": 2,    "min": 1,   "max": 8,   "step": 1,
+                          "label": "Line width (px)",
+                          "tip": "Stroke width for all drawn lines and borders."},
+        "rotation":      {"default": 0,    "min": 0,   "max": 3,   "step": 1,
+                          "label": "Rotation steps (×90°)",
+                          "tip": "Rotate the entire pattern in 90° steps."},
+        "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
+                          "label": "Random seed",       "tip": "Reproducibility."},
+        **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
+        **_TRANSPARENT_BG,
+    },
+
+    # ── Japanese Pattern ──────────────────────────────────────────────────────
+    "japanese_pattern": {
+        "motif":         {"default": "seigaiha",
+                          "options": ["seigaiha", "asanoha", "shippo", "sayagata", "yagasuri"],
+                          "label": "Motif style",
+                          "tip": ("seigaiha=overlapping scales (wave); "
+                                  "asanoha=six-pointed star from equilateral triangles; "
+                                  "shippo=interlocked circles (seven treasures); "
+                                  "sayagata=interlocked key-fret meanders; "
+                                  "yagasuri=arrow-feather chevrons."),
+                          "evolvable": False},
+        "cell_size":     {"default": 48,   "min": 12,  "max": 160, "step": 4,
+                          "label": "Cell size (px)",
+                          "tip": "Diameter / repeat unit of each motif element."},
+        "line_width":    {"default": 2,    "min": 1,   "max": 8,   "step": 1,
+                          "label": "Line width (px)",
+                          "tip": "Stroke width for all outlines."},
+        "fill_alt":      {"default": True, "type": "bool",
+                          "label": "Alternate fill colours",
+                          "tip": "Fill alternating elements with different palette colours for contrast."},
+        "rotation":      {"default": 0,    "min": 0,   "max": 3,   "step": 1,
+                          "label": "Rotation steps (×90°)",
+                          "tip": "Rotate the entire pattern in 90° steps."},
+        "seed":          {"default": 42,   "min": 0,   "max": 99999,"step": 1,
+                          "label": "Random seed",       "tip": "Reproducibility."},
+        **_BG_CONTROLS,
+        **_DIGITALIZE_CONTROL,
         **_TRANSPARENT_BG,
     },
 }

@@ -118,8 +118,7 @@ class BlurSharpGenerator(BaseGenerator):
     name = "Blur-Sharp"
     description = (
         "Iterative anisotropic blur + strong unsharp mask on seamless noise. "
-        "σX ≠ σY → directional stripes. Blur angle rotates stripes to any diagonal. "
-        "Optional second blur pass for crossing/plaid effects."
+        "σX ≠ σY → directional stripes. Blur angle rotates stripes to any diagonal."
     )
 
     def get_param_schema(self) -> dict:
@@ -129,9 +128,6 @@ class BlurSharpGenerator(BaseGenerator):
         sigma_x      = float(params.get("sigma_x",       4.0))
         sigma_y      = float(params.get("sigma_y",       4.0))
         blur_angle   = float(params.get("blur_angle",    0.0))
-        sigma_x2     = float(params.get("sigma_x2",      0.0))
-        sigma_y2     = float(params.get("sigma_y2",      0.0))
-        blur_angle2  = float(params.get("blur_angle2",   45.0))
         iterations   = int(params.get("iterations",      12))
         sharpen_amt  = float(params.get("sharpen_amt",   4.0))
         sharpen_sig  = float(params.get("sharpen_sigma", 2.0))
@@ -158,11 +154,8 @@ class BlurSharpGenerator(BaseGenerator):
         field = np.clip(field, 0.0, 1.0)
 
         # ── 2. Iterative blur-sharpen ─────────────────────────────────────────
-        use_second = sigma_x2 > 0.05 or sigma_y2 > 0.05
         for _ in range(iterations):
             field = _rotated_blur(field, sigma_x, sigma_y, blur_angle)
-            if use_second:
-                field = _rotated_blur(field, sigma_x2, sigma_y2, blur_angle2)
             field = _unsharp(field, sharpen_sig, sharpen_amt)
             mn, mx = field.min(), field.max()
             if mx > mn: field = (field - mn) / (mx - mn)

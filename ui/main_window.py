@@ -77,22 +77,32 @@ class _GenerateWorker(QObject):
 
     def _do_run(self):
         from generators import get_generator
+        from utils.image_ops import apply_digitalization, apply_diagonal_digitalization
         gen = get_generator(self._gen_name)
         img = gen.generate(self._size[0], self._size[1], self._colors_rgb, self._params)
+
+        # Apply digitalization (subsampling + NN upscale) if requested
+        dlevel = int(self._params.get("digitalize_level", 0))
+        ddiag  = bool(self._params.get("digitalize_diagonal", False))
+        if dlevel > 0:
+            img = (apply_diagonal_digitalization(img, dlevel)
+                   if ddiag else apply_digitalization(img, dlevel))
 
         if self._second:
             gen2    = get_generator(self._second["generator"])
             colors2 = self._second["palette"].as_rgb()
             img2    = gen2.generate(self._size[0], self._size[1],
                                     colors2, self._second["params"])
-            # Blend L2 over L1 (L1 alpha already stripped for base)
+            dlevel2 = int(self._second["params"].get("digitalize_level", 0))
+            ddiag2  = bool(self._second["params"].get("digitalize_diagonal", False))
+            if dlevel2 > 0:
+                img2 = (apply_diagonal_digitalization(img2, dlevel2)
+                        if ddiag2 else apply_digitalization(img2, dlevel2))
             base = (cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
                     if img.ndim == 3 and img.shape[2] == 4 else img)
             img  = _blend_layers(base, img2,
                                  self._second["blend"], self._second["opacity"])
 
-        # Preserve BGRA if no second layer; callers that can't handle alpha
-        # will composite themselves.  The preview and export both handle BGRA.
         if img.dtype != np.uint8:
             img = np.clip(img, 0, 255).astype(np.uint8)
 
@@ -219,8 +229,12 @@ class MainWindow(QMainWindow):
         self._color_panel.palette_changed.connect(self._on_palette_changed)
 
         self._gen_panel.generate_requested.connect(self._on_generate_requested)
-        self._gen_panel.params_changed.connect(
-            lambda name, params: self._evo_panel.set_seed_params(name, params))
+        self._gen_panel.params_changed.connect(self._on_gen_params_changed)
+        # Lock state changes → immediately update evo panel
+        self._gen_panel.lock_changed.connect(self._evo_panel.set_locked_params)
+        # Layer 2 lock state changes
+        self._gen_panel.lock_changed2.connect(self._evo_panel.set_locked_params2)
+
         self._preview.request_generate.connect(
             lambda: self._on_generate_requested(
                 self._gen_panel.get_generator_name(),
@@ -228,6 +242,9 @@ class MainWindow(QMainWindow):
 
         # Inject L2 provider so evolution panel reads generator panel's L2 config
         self._evo_panel._layer2_provider = self._gen_panel.get_second_layer_config
+        # Give evo panel direct access to gen panel so _on_run always reads
+        # the freshest locked-params (even if lock_changed wasn't fired yet)
+        self._evo_panel._gen_panel_ref = self._gen_panel
 
         self._evo_panel.candidate_chosen.connect(self._on_candidate_chosen)
         self._evo_panel.wants_fullwidth.connect(self._on_evo_fullwidth)
@@ -272,6 +289,11 @@ class MainWindow(QMainWindow):
             self._evo_panel.set_palette(palette)
 
     # ── generate ─────────────────────────────────────────────────────────────
+
+    def _on_gen_params_changed(self, name: str, params: dict):
+        """Propagate seed params AND current locked params to the evolution panel."""
+        self._evo_panel.set_seed_params(name, params)
+        self._evo_panel.set_locked_params(self._gen_panel.get_locked_params())
 
     def _on_generate_requested(self, gen_name: str, params: dict):
         if self._gen_thread is not None:
